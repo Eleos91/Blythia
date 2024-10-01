@@ -23,9 +23,14 @@ At this time (01-10-2024), the language supports the following features:
 - Variable shadowing
 - u64 integers
 - add, min, mult ,div, equal, grater and lesser operations
-- function definitions with params (but no return values)
+- function definitions with params in the System V x86_64 style (but no return values yet)
 - a build in function that can print one u64 value/variable
 - while loop
 - if and an optional else
 
 It's not much tbh but that shit was hard enough for me to pull off...
+
+# Next Target
+- Implement types (u64 and f64 for now) in a proper manner.
+- Variables must be typed at declaration
+- System V x86_64 module to prperly handle ints and floats
