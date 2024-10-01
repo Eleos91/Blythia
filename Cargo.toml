@@ -1,0 +1,16 @@
+[package]
+name = "blythia"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "blythia"
+path = "src/main.rs"
+
+[lib]
+name = "blythia"
+path = "src/lib/mod.rs"
+
+[dependencies]
+phf = { version = "0.11.2", features = ["macros"] }
+rand = "0.8.5"
