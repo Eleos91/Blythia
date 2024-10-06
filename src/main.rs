@@ -2,11 +2,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs, io};
+use std::time::Instant;
 
 use blythia::builder::Builder;
 use blythia::compiler::Compiler;
 use blythia::lexer::Lexer;
 use blythia::parser::Parser;
+use blythia::type_checker::TypeChecker;
 
 
 fn test2(file: &Path) {
@@ -16,13 +18,33 @@ fn test2(file: &Path) {
     };
     let lexer = Lexer::new(&content,file.file_name().unwrap().to_str().unwrap().to_string() );
     let mut parser = Parser::new(lexer, file.file_name().unwrap().to_str().unwrap().to_string());
-    let ast = parser.parse();
-    // println!("{:#?}", ast);
+
+    println!("Meassuring parser time");
+    let now = Instant::now();
+    let mut ast = parser.parse();
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring type checking time");
+    let now = Instant::now();
+    let mut type_checker = TypeChecker::new();
+    type_checker.prepare_ast(&mut ast);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring build program time");
     let mut op = Builder::new();
-    let program = op.build_program(&ast);
-    // println!("{:#?}", program);
+    let now = Instant::now();
+    let program = op.build_program(&mut ast);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring compile time");
+    let now = Instant::now();
     let output = Compiler::compile_program(program);
-    // println!("{}", output);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
     let mut outfile = PathBuf::new().join(".").join("out").join(file.file_name().unwrap());
     outfile.set_extension("asm");
     match fs::write(&outfile, output) {

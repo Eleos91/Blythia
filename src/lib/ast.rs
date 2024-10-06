@@ -1,19 +1,46 @@
-use crate::token::{Operator, PrimitiveTypes};
+use crate::token::Operator;
+
+#[derive(Debug, PartialEq, Clone, PartialOrd)]
+pub enum PrimitiveTypes {
+    // ambiguous types
+    Number,
+    Float,
+    Integer,
+    Void,
+
+    // explicit types
+    U64,
+    F64,
+
+    // Only temporarely
+    COUNT,
+}
+
+pub fn match_type(typ: &str) -> Option<PrimitiveTypes> {
+    match typ {
+        "u64" => Some(PrimitiveTypes::U64),
+        "f64" => Some(PrimitiveTypes::F64),
+        _ => None,
+    }
+}
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ASTNode {
-    FunctionDef { name: String, args: Option<Vec<String>>, body: Vec<ASTNode> },
+pub struct ASTNode {
+    pub node_type: ASTNodeType,
+    pub loc: (usize, usize),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ASTNodeType {
+    FunctionDef(String, Option<Vec<(String, PrimitiveTypes)>>,Vec<ASTNode>),
     FunctionCall(String, Vec<ASTNode>),
-    Assignment { name: String, value: Box<ASTNode> },
-    BinaryOp { left: Box<ASTNode>, op: Operator, right: Box<ASTNode>, typ: PrimitiveTypes },
-    // Number(f64),
-    // Integer(i64),
-    // Float(f64),
-    Literal {typ: PrimitiveTypes, symbols: String},
-    Identifier(String),
+    Assignment(String, Box<ASTNode>),
+    BinaryOp(Box<ASTNode>, Operator, Box<ASTNode>, PrimitiveTypes),
+    Literal(PrimitiveTypes, String),
+    Identifier(String, PrimitiveTypes),
     BuiltinFunction(String, Box<ASTNode>),
-    Declaration(String, Option<Box<ASTNode>>),
+    Declaration(String, PrimitiveTypes, Option<Box<ASTNode>>),
     If(Box<ASTNode>, Vec<ASTNode>, Option<Vec<ASTNode>>),
     While(Box<ASTNode>, Vec<ASTNode>),
     SExpression(Box<ASTNode>), // used for standalone expr to clean up stack
@@ -21,9 +48,10 @@ pub enum ASTNode {
 
 impl ASTNode {
     pub fn get_type(&self) -> Result<PrimitiveTypes, String> {
-        match self {
-            ASTNode::BinaryOp { left: _, op: _, right: _, typ } => Ok(typ.clone()),
-            ASTNode::Literal { typ, symbols: _ } => Ok(typ.clone()),
+        match &self.node_type {
+            ASTNodeType::BinaryOp( _, _, _, typ) => Ok(typ.clone()),
+            ASTNodeType::Literal(typ, _) => Ok(typ.clone()),
+            ASTNodeType::Identifier(_, typ) => Ok(typ.clone()),
             _ => Err(format!("Tried to access type of typeless node: {:#?}", self))
         }
     }

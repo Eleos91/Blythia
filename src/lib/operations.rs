@@ -10,6 +10,8 @@ pub enum Operation {
   LessInt,
 
   PushFloat(String),
+  LiteralFloat,
+  SwtichRegisterFloat,
   AddFloat,
   MultFloat,
   MinusFloat,
@@ -31,12 +33,22 @@ pub enum Operation {
 
   StoreInt(String),
   LoadInt(String),
+  StoreFloat(String),
+  LoadFloat(String),
 
-  ParameterIntegerStore(usize),
-  ParameterIntegerLoad(usize),
-  ArgumentIntegerStore(usize),
-  ArgumentIntegerLoad(usize),
-  
+  // System V operations
+  SysVIntegerArguemtnPreparation(usize),
+  SysVIntegerSaveArgumentAfterCall(usize, usize), // (reg index, stack offset)
+  SysVIntegerPrameterLoad(usize),
+  SysVIntegerPrameterStore(usize),
+  SysVSSEArgumentPreparation(usize),
+  SysVSSESaveArgumentAfterCall(usize, usize),
+  SysVSSEParameterLoad(usize),
+  SysVSSEParameterStore(usize),
+  SysVMemoryArgumentPreparation(usize),
+  SysVMemoryParameterLoad(usize),
+  SysVMemoryParameterStore(usize),
+
   BeginFunction(String),
   ReserveParameters(usize),
   EndFunction(),

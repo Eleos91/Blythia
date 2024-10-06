@@ -46,9 +46,8 @@ impl<'a> Lexer<'a> {
                 }
                 '\n' => {
                     self.input.next();
-                    self.increment_row();
                     Token::Newline
-                    
+
                 }
                 '(' => {
                     self.input.next();
@@ -67,7 +66,7 @@ impl<'a> Lexer<'a> {
                 }
                 ':' => {
                     self.input.next();
-                    Token::NewScope
+                    Token::Colon
                 }
                 unhandled => {
                     self.input.next();
@@ -83,15 +82,13 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> LocToken {
+        if self.last_token == Token::Newline {
+            self.increment_row();
+        }
         self.consumption_length = 1;
         let t = self.find_next_token();
         let res = (self.position, t);
-        if let (_, Token::Newline) = res {
-            self.increment_row();
-        }
-        else {
-            self.increment_col(self.consumption_length);
-        }
+        self.increment_col(self.consumption_length);
         res
     }
 
@@ -115,7 +112,7 @@ impl<'a> Lexer<'a> {
             if ch.is_ascii_digit() {
                 num_str.push(ch);
                 self.input.next();
-            } 
+            }
             else if ch == '.' {
                 if saw_dot {
                     panic!("Error parsing number. Floats can't have more then one '.'");
