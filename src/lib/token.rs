@@ -14,7 +14,7 @@ pub enum Token {
     Comma,
     Newline,
     Indent(usize),
-    NewScope,
+    Colon,
     EOF,
 }
 
@@ -95,27 +95,6 @@ pub fn match_builtin_functions(s: &str) -> Option<String> {
         _ => None,
     }
 }
-
-#[derive(Debug, PartialEq, Clone, PartialOrd)]
-pub enum PrimitiveTypes {
-    // ambiguous types
-    // Number,
-    Float,
-    Integer,
-    // Void,
-
-    // explicit types
-    // U64,
-
-    // Only temporarely
-    COUNT,
-}
-// pub fn match_type(s: &str) -> Option<PrimitiveTypes> {
-//     match s {
-//         "u64" => Some(PrimitiveTypes::U64),
-//         _ => None,
-//     }
-// }
 
 // Soon variant_count will be available. This is incredibly useful
 // when adding variants. you can assert a certain amount of variants

@@ -1,5 +1,5 @@
-var x = 40
-var y = 2
+var x: u64 = 40
+var y: u64 = 2
 if 0:
   x = 50
   print_int(420)

@@ -1,8 +1,9 @@
 use core::panic;
+use std::cmp::Ordering;
 
-use crate::token::{LocToken, Precedences, PrimitiveTypes, Token, OPERATOR_MAP, OPERATOR_PRECEDENCES, Keyword};
+use crate::token::{LocToken, Precedences, Token, OPERATOR_MAP, OPERATOR_PRECEDENCES, Keyword};
 use crate::lexer::Lexer;
-use crate::ast::ASTNode;
+use crate::ast::{match_type, ASTNode, ASTNodeType, PrimitiveTypes};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -47,6 +48,10 @@ impl<'a> Parser<'a> {
         panic!("{}", msg);
     }
 
+    fn get_current_loc(&self) -> (usize, usize) {
+        self.current_loc_token.0
+    }
+
     fn advance(&mut self) {
         self.current_loc_token = self.next_loc_token.clone();
         self.next_loc_token = self.lexer.next_token();
@@ -82,16 +87,24 @@ impl<'a> Parser<'a> {
                 continue;
             }
             if !self.indent_stack.is_empty() {
-                let last = self.indent_stack.last().expect("safe");
-                if self.current_token == Token::Indent(*last) {
-                    self.advance();
-                }
-                else if self.current_token < Token::Indent(*last) {
-                    self.indent_stack.pop();
-                    return nodes;
+                if let Token::Indent(new_indent) = self.current_token {
+                    let &last = self.indent_stack.last().unwrap();
+                    match new_indent.cmp(&last) {
+                        Ordering::Equal => {
+                            self.advance();
+                        }
+                        Ordering::Less => {
+                            self.indent_stack.pop();
+                            return nodes;
+                        }
+                        Ordering::Greater => {
+                            self.panic_loc("Unexpeted indention!")
+                        }
+                    }
                 }
                 else {
-                    self.panic_loc("Unexpeted indention!")
+                    self.indent_stack.clear();
+                    return nodes;
                 }
             }
             else if let Token::Indent(_) = self.current_token {
@@ -151,6 +164,7 @@ impl<'a> Parser<'a> {
         if Token::Keyword(Keyword::Def) != self.current_token{
             self.panic_loc("expected def keyword while parsing function definition.")
         }
+        let loc = self.get_current_loc();
         self.advance(); // consume 'def'
 
         let Token::Identifier(name) = &self.current_token  else {
@@ -164,13 +178,13 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // consume '('
 
-        let mut args: Option<Vec<String>> = None;
+        let mut args: Option<Vec<(String, PrimitiveTypes)>> = None;
         if Token::RParen != self.current_token {
             args = Some(self.parse_function_def_args());
         }
-            
+
         self.advance(); // consume ')'
-        if Token::NewScope != self.current_token{
+        if Token::Colon != self.current_token{
             self.panic_loc("expected ':' while parsing function definition.")
         }
         self.advance(); // consume ':'
@@ -186,15 +200,15 @@ impl<'a> Parser<'a> {
         self.increse_indention();
         let body = self.parse();
 
-        ASTNode::FunctionDef {
-            name: func_name,
-            args,
-            body,
+        ASTNode {
+            node_type: ASTNodeType::FunctionDef(func_name, args, body,),
+             loc,
         }
+
     }
 
-    fn parse_function_def_args(&mut self) -> Vec<String> {
-        let mut args = Vec::new();
+    fn parse_function_def_args(&mut self) -> Vec<(String, PrimitiveTypes)> {
+        let mut args: Vec<(String, PrimitiveTypes)> = Vec::new();
         while self.current_token != Token::RParen {
             if self.current_token == Token::Newline {
                 self.panic_loc("Newlines '\\n' are currenlty not allowed during the definition of function parameters")
@@ -208,7 +222,21 @@ impl<'a> Parser<'a> {
             };
             self.advance();
 
-            args.push(name);
+            let Token::Colon = self.current_token.clone() else {
+                self.panic_loc("Expected ':', got unexpected token at definition of funciton parameters")
+            };
+            self.advance();
+
+            let Token::Identifier(type_str) = self.current_token.clone() else {
+                self.panic_loc("Expected type identifier, got unexpected token at definition of funciton parameters")
+            };
+            self.advance();
+
+            let Some(typ) = match_type(type_str.as_str()) else {
+                self.panic_loc("Uknown type while declaring function parameters")
+            };
+
+            args.push((name, typ));
 
             if self.current_token == Token::Comma {
                 if let Token::Identifier(_) = self.next_token {
@@ -226,6 +254,7 @@ impl<'a> Parser<'a> {
         let Token::Identifier(name) = self.current_token.clone() else {
             self.panic_loc("Expected identifier for function call.")
         };
+        let loc = self.get_current_loc();
         self.advance();
         if Token::LParen != self.current_token{
             self.panic_loc("expected '(' afer function name while parsing function call.")
@@ -239,14 +268,17 @@ impl<'a> Parser<'a> {
         self.advance(); // consume ')'
 
         {
-            println!("WARNING: function calls can not be used as expressions at the moment\n");
-            println!("    Treated as a statement instead. This needs to be changed itf");
+            // println!("WARNING: function calls can not be used as expressions at the moment");
+            // println!("    Treated as a statement instead. This needs to be changed itf");
             if Token::Newline != self.current_token && Token::EOF != self.current_token{
                 self.panic_loc("expected newline '\\n' while parsing function call.")
             }
         }
-        
-        ASTNode::FunctionCall(name.clone(), args)
+
+        ASTNode {
+            node_type: ASTNodeType::FunctionCall(name.clone(), args),
+            loc
+        }
     }
 
     fn parse_function_call_args(&mut self) -> Vec<ASTNode> {
@@ -273,6 +305,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> ASTNode {
+        let loc = self.get_current_loc();
         if Token::Keyword(Keyword::Var) != self.current_token {
             self.panic_loc("Expected 'var' Keyword for declaration.")
         }
@@ -283,13 +316,33 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
+        let Token::Colon = self.current_token.clone() else {
+            self.panic_loc("Expected ':' after identifier for declaration.")
+        };
+        self.advance();
+
+        let Token::Identifier(typ_str) = self.current_token.clone() else {
+            self.panic_loc("Expected type (identefier) after identifier for declaration.")
+        };
+        self.advance();
+
+        let Some(typ) = match_type(&typ_str) else {
+            self.panic_loc(format!("Type with name '{}' does not exist", typ_str).as_str())
+        };
+
         if self.current_token == Token::Assignment {
             self.advance();
             let expr = self.parse_expression(Precedences::P0);
-            ASTNode::Declaration(name, Some(Box::new(expr)))
+            ASTNode {
+                node_type: ASTNodeType::Declaration(name, typ, Some(Box::new(expr))),
+                loc,
+            }
         }
         else if self.current_token == Token::Newline {
-            ASTNode::Declaration(name, None)
+            ASTNode {
+                node_type: ASTNodeType::Declaration(name, typ, None),
+                loc,
+            }
         }
         else {
             self.panic_loc("Unexpeted Token after declaration.")
@@ -297,6 +350,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_assignment(&mut self) -> ASTNode {
+        let loc = self.get_current_loc();
         let Token::Identifier(var_name) = &self.current_token else {
             self.panic_loc("Expected identifier for assignment")
         };
@@ -309,13 +363,14 @@ impl<'a> Parser<'a> {
         self.advance(); // consume '='
 
         let value = self.parse_expression(Precedences::P0);
-        ASTNode::Assignment {
-            name,
-            value: Box::new(value),
+        ASTNode {
+            node_type: ASTNodeType::Assignment(name, Box::new(value)),
+            loc,
         }
     }
 
     fn parse_operant(&mut self) -> ASTNode {
+        let loc = self.get_current_loc();
         match &self.current_token {
             Token::LParen => {
                 self.advance();
@@ -326,23 +381,32 @@ impl<'a> Parser<'a> {
                 self.advance();
                 expr
             }
-            Token::RParen => { 
+            Token::RParen => {
                 self.panic_loc("Did not exprect ')' here!")
             }
             Token::Identifier(s) => {
                 let _s = s.clone();
                 self.advance();
-                ASTNode::Identifier(_s)
+                ASTNode {
+                    node_type: ASTNodeType::Identifier(_s, PrimitiveTypes::Void),
+                    loc,
+                }
             }
             Token::Float(n) => {
                 let _n = n.clone();
                 self.advance();
-                ASTNode::Literal { typ: PrimitiveTypes::Float, symbols: _n }
+                ASTNode {
+                    node_type: ASTNodeType::Literal(PrimitiveTypes::Float, _n),
+                    loc,
+                }
             }
             Token::Integer(n) => {
                 let _n = n.clone();
                 self.advance();
-                ASTNode::Literal { typ: PrimitiveTypes::Integer, symbols: _n }
+                ASTNode {
+                    node_type: ASTNodeType::Literal(PrimitiveTypes::Number, _n),
+                    loc,
+                }
             }
             _ => {
                 self.panic_loc(format!("Unexoected Token here: {:#?}", self.current_token).as_str())
@@ -356,33 +420,20 @@ impl<'a> Parser<'a> {
         }
 
         let lhs = self.parse_expression(prec.increment());
-        if self.current_token != Token::EOF && self.current_token != Token::Newline && self.current_token != Token::NewScope {
+        if self.current_token != Token::EOF && self.current_token != Token::Newline && self.current_token != Token::Colon {
             if let Token::Operator(ch) = self.current_token.clone() {
+                let loc = self.get_current_loc();
                 if OPERATOR_PRECEDENCES.get(&ch).expect("Wiil always be safe") == &prec {
                     self.advance();
                     let rhs = self.parse_expression(prec);
 
-                    let l_type: PrimitiveTypes = match &lhs {
-                        ASTNode::Literal { typ, symbols: _ } => typ.clone(),
-                        ASTNode::BinaryOp { left: _, op: _, right: _, typ } => typ.clone(),
-                        ASTNode::Identifier(_) => PrimitiveTypes::Integer,
-                        _ => self.panic_loc("Unexpecred lhs for op."),
-                    };
-                    let r_type: PrimitiveTypes = match &rhs {
-                        ASTNode::Literal { typ, symbols: _ } => typ.clone(),
-                        ASTNode::BinaryOp { left: _, op: _, right: _, typ } => typ.clone(),
-                        ASTNode::Identifier(_) => PrimitiveTypes::Integer,
-                        _ => self.panic_loc("Unexpecred lhs for op."),
-                    };
-                    if l_type != r_type {
-                        self.panic_loc("Types of oerants don't match!")
-                    }
-                    if let Some(op) = OPERATOR_MAP.get(&ch) {
-                        return ASTNode::BinaryOp { left: Box::new(lhs), op: op.clone(), right: Box::new(rhs), typ: l_type };
-                    }
-                    else {
+                    let Some(op) = OPERATOR_MAP.get(&ch) else {
                         self.panic_loc(format!("Found unsopported operator while buildine ASTNode: {}", ch).as_str())
-                    }
+                    };
+                    return ASTNode {
+                        node_type: ASTNodeType::BinaryOp(Box::new(lhs), op.clone(), Box::new(rhs), PrimitiveTypes::Void),
+                        loc,
+                    };
                 }
             }
         }
@@ -390,29 +441,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement_expression(&mut self) -> ASTNode {
-        ASTNode::SExpression(Box::new(self.parse_expression(Precedences::P0)))
+        ASTNode {
+            node_type: ASTNodeType::SExpression(Box::new(self.parse_expression(Precedences::P0))),
+            loc: self.get_current_loc(),
+        }
     }
 
     fn parse_builtin(&mut self) -> ASTNode {
         let Token::Builtin(name) = self.current_token.clone() else {
             self.panic_loc(format!("Tried to parse builtin token but found this: {:#?}", self.current_token).as_str())
         };
+        let loc = self.get_current_loc();
         self.advance();
         if self.current_token != Token::LParen {
             self.panic_loc("expected '(' adter print.")
         }
         let expr = self.parse_expression(Precedences::P0);
-        ASTNode::BuiltinFunction(name, Box::new(expr))
+        ASTNode {
+            node_type: ASTNodeType::BuiltinFunction(name, Box::new(expr)),
+            loc,
+        }
     }
 
     fn parse_if_else(&mut self) ->ASTNode {
+        // I relized know that i loose the location of the else keyword...
+        let loc = self.get_current_loc();
         if Token::Keyword(Keyword::If) != self.current_token {
             self.panic_loc("Expected if token.")
         }
         self.advance();
 
         let cond = self.parse_expression(Precedences::P0);
-        if Token::NewScope != self.current_token {
+        if Token::Colon != self.current_token {
             self.panic_loc("Expected ':' after the expression of the if condition.")
         }
         self.advance();
@@ -426,11 +486,14 @@ impl<'a> Parser<'a> {
         let then = self.parse();
 
         if Token::Keyword(Keyword::Else) != self.current_token {
-            return ASTNode::If(Box::new(cond), then, None);
+            return ASTNode {
+                node_type: ASTNodeType::If(Box::new(cond), then, None),
+                loc,
+            }
         }
         self.advance();
 
-        if Token::NewScope != self.current_token {
+        if Token::Colon != self.current_token {
             self.panic_loc("Expected ':' after else keyword.")
         }
         self.advance();
@@ -446,10 +509,14 @@ impl<'a> Parser<'a> {
         }
 
         let els = self.parse();
-        ASTNode::If(Box::new(cond), then, Some(els))
+        ASTNode {
+            node_type: ASTNodeType::If(Box::new(cond), then, Some(els)),
+            loc,
+        }
     }
 
     fn parse_while(&mut self) -> ASTNode{
+        let loc = self.get_current_loc();
         if Token::Keyword(Keyword::While) != self.current_token {
             self.panic_loc("Expected 'while' token here.")
         }
@@ -457,7 +524,7 @@ impl<'a> Parser<'a> {
 
         let cond = self.parse_expression(Precedences::P0);
 
-        if Token::NewScope != self.current_token {
+        if Token::Colon != self.current_token {
             self.panic_loc("Expected ':' after while expression.")
         }
         self.advance();
@@ -470,6 +537,9 @@ impl<'a> Parser<'a> {
         self.increse_indention();
         let body = self.parse();
 
-        ASTNode::While(Box::new(cond), body)
+        ASTNode {
+            node_type: ASTNodeType::While(Box::new(cond), body),
+            loc,
+        }
     }
 }

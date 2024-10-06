@@ -1,7 +1,8 @@
 use crate::operations::{Operation, Program};
 
 const INTEGER_ARGUMENT_ORDDER: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
-const INTEGER_RETURN_ORDER: [&str; 2] = ["rax", "rdx"];
+const SSE_ARRGUMENT_ORDER: [&str; 8] = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"];
+const _INTEGER_RETURN_ORDER: [&str; 2] = ["rax", "rdx"];
 
 
 const _PRINT_INT_ASM: &str = "
@@ -172,11 +173,46 @@ impl Compiler {
           output.push_str("    cmovl r12, r13\n");
           output.push_str("    push r12\n");
         }
-        Operation::PushFloat(_) => todo!(),
-        Operation::AddFloat => todo!(),
-        Operation::MultFloat => todo!(),
-        Operation::MinusFloat => todo!(),
-        Operation::DivFloat => todo!(),
+        Operation::PushFloat(s) => {
+          output.push_str(format!("    mov rax, __?float64?__({s})\n").as_str());
+          output.push_str("    push rax\n");
+        }
+        Operation::AddFloat => {
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm7, rax\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm6, rax\n");
+          output.push_str("    addsd xmm6, xmm7\n");
+          output.push_str("    movq rax, xmm6\n");
+          output.push_str("    push rax\n");
+        }
+        Operation::MultFloat => {
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm7, rax\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm6, rax\n");
+          output.push_str("    mulsd xmm6, xmm7\n");
+          output.push_str("    movq rax, xmm6\n");
+          output.push_str("    push rax\n");
+        }
+        Operation::MinusFloat => {
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm7, rax\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm6, rax\n");
+          output.push_str("    subsd xmm6, xmm7\n");
+          output.push_str("    movq rax, xmm6\n");
+          output.push_str("    push rax\n");
+        }
+        Operation::DivFloat => {
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm7, rax\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    movq xmm6, rax\n");
+          output.push_str("    divsd xmm6, xmm7\n");
+          output.push_str("    movq rax, xmm6\n");
+          output.push_str("    push rax\n");
+        }
         Operation::PrintInt => {
           output.push_str("    pop rdi\n");
           output.push_str("    call print_int\n");
@@ -229,44 +265,58 @@ impl Compiler {
         Operation::FunctionCall(name, _) => {
           output.push_str(format!("    call {}\n", name).as_str());
         }
-        Operation::ParameterIntegerStore(n) => {
-          if n < &INTEGER_ARGUMENT_ORDDER.len() {
-            output.push_str("    pop rax\n");
-            output.push_str(format!("    mov QWORD [rbp - 8*{}], rax\n", n + 1).as_str());
-          }
-          else {
-            todo!()
-          }
+        Operation::ReserveParameters(size) => {
+            output.push_str(format!("    sub rsp, {size}\n").as_str());
+        }
+        Operation::LiteralFloat => todo!(),
+        Operation::SwtichRegisterFloat => todo!(),
+        Operation::StoreFloat(addr) => {
+          output.push_str("    pop rax\n");
+          output.push_str(format!("    mov [{}], rax\n", addr).as_str());
+        }
+        Operation::LoadFloat(addr) => {
+          output.push_str(format!("    mov rax, QWORD [{}]\n", addr).as_str());
+          output.push_str("    push rax\n");
+        }
+        Operation::SysVIntegerArguemtnPreparation(i) => {
+          output.push_str(format!("    pop {}\n", INTEGER_ARGUMENT_ORDDER[*i]).as_str());
+        }
+        Operation::SysVIntegerSaveArgumentAfterCall(i, offset) => {
+          output.push_str(format!("    mov QWORD [rbp - {}], {}\n", offset, INTEGER_ARGUMENT_ORDDER[*i]).as_str());
+        }
+        Operation::SysVIntegerPrameterLoad(offset) => {
+          output.push_str(format!("    mov rax, QWORD [rbp - {}]\n", offset).as_str());
+          output.push_str("    push rax\n");
+
+        }
+        Operation::SysVIntegerPrameterStore(offset) => {
+          output.push_str("    pop rax\n");
+          output.push_str(format!("    mov QWORD [rbp - {}], rax\n", offset).as_str());
+        }
+        Operation::SysVSSEArgumentPreparation(i) => {
+          output.push_str("    pop rax\n");
+          output.push_str(format!("    movq {}, rax\n", SSE_ARRGUMENT_ORDER[*i]).as_str());
+        }
+        Operation::SysVSSESaveArgumentAfterCall(i, offset) => {
+          output.push_str(format!("    movq [rbp - {}], {}\n", offset, SSE_ARRGUMENT_ORDER[*i]).as_str());
+        }
+        Operation::SysVSSEParameterLoad(offset) => {
+          output.push_str(format!("    mov rax, QWORD [rbp - {}]\n", offset).as_str());
+          output.push_str("    push rax\n");
+        }
+        Operation::SysVSSEParameterStore(offset) => {
+          output.push_str("    pop rax\n");
+          output.push_str(format!("    mov QWORD [rbp - {}], rax\n", offset).as_str());
+        }
+        Operation::SysVMemoryArgumentPreparation(_) => {},
+        Operation::SysVMemoryParameterLoad(offset) => {
+          output.push_str(format!("    mov rax, QWORD [rbp + 16 + {}]\n", offset).as_str());
+          output.push_str("    push rax\n");
         },
-        Operation::ParameterIntegerLoad(n) => {
-          if n < &6 {
-            output.push_str(format!("    push QWORD [rbp - 8*{}]\n", n + 1).as_str());
-          }
-          else {
-            todo!()
-          }
+        Operation::SysVMemoryParameterStore(offset) => {
+          output.push_str("    pop rax\n");
+          output.push_str(format!("    mov QWORD [rbp + 16 + {}], rax\n", offset).as_str());
         },
-        Operation::ArgumentIntegerStore(n) => {
-          if n < &6 {
-            let reg = INTEGER_ARGUMENT_ORDDER[*n];
-            output.push_str(format!("    pop {reg}\n").as_str());
-          }
-          else {
-            todo!()
-          }
-        }
-        Operation::ArgumentIntegerLoad(n) => {
-          if n < &6 {
-            let reg = INTEGER_ARGUMENT_ORDDER[*n];
-            output.push_str(format!("    mov QWORD [rbp - 8*{}], {reg}\n", n + 1).as_str());
-          }
-          else {
-            todo!()
-          }
-        }
-        Operation::ReserveParameters(n) => {
-            output.push_str(format!("    sub rsp, {}\n", (n + 1)*8).as_str());
-        }
       }
     }
     output

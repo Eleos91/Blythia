@@ -1,6 +1,6 @@
-var x = 10
+var x: u64 = 10
 while x > 0:
   print_int(x)
   x = x - 1
-  var x = 20
+  var x: u64 = 20
   print_int(x)
