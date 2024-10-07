@@ -7,11 +7,6 @@ use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
 
 
 #[derive(Debug, Clone)]
-enum ParameterType {
-  Integer(usize),
-}
-
-#[derive(Debug, Clone)]
 enum VarriableType {
   Global(String, PrimitiveTypes),
   Parameter(Parameter),
@@ -23,22 +18,37 @@ pub struct Builder {
   functions: HashMap<String, SystemV>,
   vars: Vec<String>,
   ref_count: usize,
+  file_name: String,
 }
 
 impl Default for Builder {
   fn default() -> Self {
-    Self::new()
+    Self::new(String::new())
   }
 }
 
 impl  Builder {
-  pub fn new() -> Builder {
+  pub fn new(file_name: String) -> Builder {
     Builder {
       scopes: Vec::new(),
       functions: HashMap::new(),
       vars: Vec::new(),
       ref_count: 0,
+      file_name,
     }
+  }
+
+  pub fn panic_loc<T>(&self, node: &ASTNode, msg: &str) -> T {
+    let mut fmt: String = String::new();
+    let (row, col) = node.get_loc();
+    fmt.push_str(&self.file_name);
+    fmt.push(':');
+    fmt.push_str(&row.to_string());
+    fmt.push(':');
+    fmt.push_str(&col.to_string());
+    fmt.push('\n');
+    eprintln!("{}", fmt);
+    panic!("{}", msg);
   }
 
   pub fn build_program(&mut self,ast: &mut Vec<ASTNode>) -> Program {
@@ -60,13 +70,13 @@ impl  Builder {
     n
   }
 
-  fn delcare_global_var(&mut self, name: &String, value_type: PrimitiveTypes) {
+  fn delcare_global_var(&mut self,node: &ASTNode, name: &String, value_type: PrimitiveTypes) {
     if self.scopes.is_empty() {
-      panic!("Scopes are empty!!!")
+      self.panic_loc(node, "Scope is emppty!")
     }
     for key in self.functions.keys() {
       if key == name {
-        panic!("var '{}' is trying to shadow a function. this is not allowed.", name)
+        self.panic_loc(node, format!("var '{}' is trying to shadow a function. this is not allowed.", name).as_str())
       }
     }
 
@@ -96,7 +106,7 @@ impl  Builder {
         ASTNodeType::FunctionDef(ref name, ref args, ref body) => {
           for key in self.functions.keys() {
             if key == name {
-              panic!{"Duplicate function with name '{}'.", name}
+              self.panic_loc(node, format!("Duplicate function with name '{}'.", name).as_str())
             }
           }
 
@@ -106,7 +116,7 @@ impl  Builder {
           if let Some(args) = args {
             parameters.add_parameters(args);
             let scope = self.scopes.last_mut().unwrap();
-            for (i, (arg_name, arg_type)) in args.iter().enumerate() {
+            for (i, (arg_name, _)) in args.iter().enumerate() {
               parameters.translate_save_arguments(i, operations);
               let p = parameters.get(i).unwrap();
               scope.insert(arg_name.clone(), VarriableType::Parameter(p.clone()));
@@ -119,7 +129,7 @@ impl  Builder {
           self.scopes.pop(); // remove parameters
         },
         ASTNodeType::Declaration(ref name, ref typ, _) => {
-          self.delcare_global_var(name, typ.clone());
+          self.delcare_global_var(node, name, typ.clone());
         },
 
         ASTNodeType::Assignment(_, _) |
@@ -147,7 +157,7 @@ impl  Builder {
     match node.node_type {
       ASTNodeType::Assignment(ref name, ref value) => {
         let Some(typ) = self.get_var(name) else {
-          panic!("'{}' was not declared!", name);
+          self.panic_loc(node, format!("'{}' was not declared!", name).as_str())
         };
         match typ {
           VarriableType::Global(name, typ) => {
@@ -160,7 +170,7 @@ impl  Builder {
                 self.translate_node(value, operations);
                 operations.push(Operation::StoreFloat(name));
               }
-              _ => panic!("Unexpected type!"),
+              _ => self.panic_loc(node, "Unexpected type!"),
             }
           }
           VarriableType::Parameter(p) => {
@@ -187,13 +197,13 @@ impl  Builder {
             (PrimitiveTypes::F64, _) => todo!(),
 
             // ambiguous types
-            (PrimitiveTypes::Number, _) => panic!("Ambigupus type 'Number'"),
-            (PrimitiveTypes::Float,_) => todo!("Ambigupus type 'Float'"),
-            (PrimitiveTypes::Integer, _) => todo!("Ambigupus type 'Integer'"),
+            (PrimitiveTypes::Number, _) => self.panic_loc( node, "Ambigupus type 'Number'"),
+            (PrimitiveTypes::Float,_) => self.panic_loc(node, "Ambigupus type 'Float'"),
+            (PrimitiveTypes::Integer, _) => self.panic_loc(node, "Ambigupus type 'Integer'"),
 
             // invalid types
-            (PrimitiveTypes::Void, _) => panic!("Operations not defined for 'void'"),
-            (PrimitiveTypes::COUNT,_) => panic!("Invalid type at BinaryOp translation!"),
+            (PrimitiveTypes::Void, _) => self.panic_loc(node, "Operations not defined for 'void'"),
+            (PrimitiveTypes::COUNT,_) => self.panic_loc(node, "Invalid type at BinaryOp translation!"),
         };
         operations.push(operation);
       }
@@ -202,20 +212,20 @@ impl  Builder {
           PrimitiveTypes::U64 => operations.push(Operation::PushInt(symbols.clone())),
           PrimitiveTypes::F64 => operations.push(Operation::PushFloat(symbols.clone())),
           _ => {
-            panic!("Found unsupported Primitve Type in translate_node: {:#?}, {symbols}", typ)
+            self.panic_loc(node, format!("Found unsupported Primitve Type in translate_node: {:#?}, {symbols}", typ).as_str())
           }
         }
       }
       ASTNodeType::Identifier(ref name, _) => {
         let Some(var_type) = self.get_var(name) else {
-          panic!("'{}' was not declared!", name)
+          self.panic_loc(node, format!("'{}' was not declared!", name).as_str())
         };
         match var_type {
           VarriableType::Global(name, value_type) => {
             match value_type {
                 PrimitiveTypes::U64 => operations.push(Operation::LoadInt(name)),
                 PrimitiveTypes::F64 => operations.push(Operation::LoadFloat(name)),
-                _ => panic!("unexpected type")
+                _ => self.panic_loc(node, "unexpected type")
             }
           }
           VarriableType::Parameter(p) => {
@@ -227,11 +237,11 @@ impl  Builder {
         self.translate_node(expr, operations);
         match name.as_str() {
           "print_int" => operations.push(Operation::PrintInt),
-          _ => panic!("Unsupported builtin funcrion for translate_node: {}", name),
+          _ => self.panic_loc(node, format!("Unsupported builtin funcrion for translate_node: {}", name).as_str()),
         }
       }
       ASTNodeType::Declaration(ref name, ref value_type, ref expr) => {
-        self.delcare_global_var(name, value_type.clone());
+        self.delcare_global_var(node, name, value_type.clone());
         self.vars.push(name.clone());
         match expr {
           None => {}
@@ -268,11 +278,11 @@ impl  Builder {
       }
       ASTNodeType::FunctionCall(ref name, ref args) => {
         let Some(def_args) = self.functions.get(name) else {
-          panic!("Tried to call function '{}' with '{}' arguments and was never defined!", name, args.len());
+          self.panic_loc(node, format!("Tried to call function '{}' with '{}' arguments and was never defined!", name, args.len()).as_str())
         };
         let def_args = def_args.clone();
         if args.len() != def_args.len() {
-          panic!("Not the right amount of parameters")
+          self.panic_loc(node, "Not the right amount of parameters")
         }
         for (i, expr) in args.iter().enumerate() {
           self.translate_node(expr, operations);

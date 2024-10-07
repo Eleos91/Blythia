@@ -33,7 +33,7 @@ fn test2(file: &Path) {
     println!("Elapsed: {:.2?}", elapsed);
 
     println!("Meassuring build program time");
-    let mut op = Builder::new();
+    let mut op = Builder::new(file.file_name().unwrap().to_str().unwrap().to_string());
     let now = Instant::now();
     let program = op.build_program(&mut ast);
     let elapsed = now.elapsed();

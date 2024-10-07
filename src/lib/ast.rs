@@ -47,6 +47,11 @@ pub enum ASTNodeType {
 }
 
 impl ASTNode {
+
+    pub fn get_loc(&self) -> &(usize, usize) {
+        &self.loc
+    }
+
     pub fn get_type(&self) -> Result<PrimitiveTypes, String> {
         match &self.node_type {
             ASTNodeType::BinaryOp( _, _, _, typ) => Ok(typ.clone()),

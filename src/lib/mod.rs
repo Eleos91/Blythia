@@ -1,5 +1,4 @@
 use ast::PrimitiveTypes;
-use scopes::systemv;
 
 pub mod lexer;
 pub mod parser;
@@ -12,16 +11,16 @@ pub mod scopes;
 pub mod type_checker;
 
 pub trait Parameters<T> {
-  fn add(&mut self, name: &String, value_type: &PrimitiveTypes);
+  fn add(&mut self, name: &str, value_type: &PrimitiveTypes);
   fn get(&self, name: String) -> T;
 }
 
-impl Parameters<systemv::Parameter> for systemv::SystemV {
-    fn add(&mut self, name: &String, value_type: &PrimitiveTypes) {
-        self.add(name, value_type)
-    }
+// impl Parameters<systemv::Parameter> for systemv::SystemV {
+//     fn add(&mut self, name: &str, value_type: &PrimitiveTypes) {
+//         self.add(name, value_type)
+//     }
 
-    fn get(&self, _name: String) -> systemv::Parameter {
-        todo!()
-    }
-}
+//     fn get(&self, _name: String) -> systemv::Parameter {
+//         todo!()
+//     }
+// }

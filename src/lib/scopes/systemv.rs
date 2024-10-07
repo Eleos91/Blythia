@@ -1,9 +1,9 @@
-use crate::{ast::PrimitiveTypes, operations::{self, Operation}};
+use crate::{ast::PrimitiveTypes, operations::Operation};
 
 #[derive(Debug, Clone)]
 enum ParameterClass {
   Integer(usize),
-  SSE(usize),
+  Sse(usize),
   // SSEUp,
   // X87,
   // X87Up,
@@ -14,11 +14,11 @@ enum ParameterClass {
 
 #[derive(Debug, Clone)]
 pub struct Parameter {
-  name: String,
-  arg_index: usize,
+  // name: String,
+  // arg_index: usize,
   class: ParameterClass,
   class_index: usize,
-  value_type: PrimitiveTypes,
+  // value_type: PrimitiveTypes,
 }
 
 impl Parameter {
@@ -27,7 +27,7 @@ impl Parameter {
       ParameterClass::Integer(offset) => {
         operations.push(Operation::SysVIntegerPrameterStore(offset));
       }
-      ParameterClass::SSE(offset) => {
+      ParameterClass::Sse(offset) => {
         operations.push(Operation::SysVSSEParameterStore(offset));
       }
       ParameterClass::Memory(offset) => {
@@ -41,7 +41,7 @@ impl Parameter {
       ParameterClass::Integer(offset) => {
         operations.push(Operation::SysVIntegerPrameterLoad(offset));
       }
-      ParameterClass::SSE(offset) => {
+      ParameterClass::Sse(offset) => {
         operations.push(Operation::SysVSSEParameterLoad(offset));
       }
       ParameterClass::Memory(offset) => {
@@ -98,15 +98,15 @@ impl SystemV {
     self.stack_reserve_size
   }
 
-  fn add(&mut self, name: &String, value_type: &PrimitiveTypes) {
+  fn add(&mut self, value_type: &PrimitiveTypes) {
     let parameter: Parameter;
     match value_type {
       PrimitiveTypes::U64 => {
         if self.integer_parameters.len() < 6 {
           parameter = Parameter {
-            name: name.clone(),
-            value_type: value_type.clone(),
-            arg_index: self.parameters.len(),
+            // name: name.to_string(),
+            // value_type: value_type.clone(),
+            // arg_index: self.parameters.len(),
             class: ParameterClass::Integer(self.stack_reserve_size),
             class_index: self.integer_parameters.len(),
           };
@@ -115,9 +115,9 @@ impl SystemV {
         }
         else {
           parameter = Parameter {
-            name: name.clone(),
-            value_type: value_type.clone(),
-            arg_index: self.parameters.len(),
+            // name: name.to_string(),
+            // value_type: value_type.clone(),
+            // arg_index: self.parameters.len(),
             class: ParameterClass::Memory(self.memory_size),
             class_index: self.memory_parameters.len(),
           };
@@ -128,10 +128,10 @@ impl SystemV {
       PrimitiveTypes::F64 => {
         if self.sse_parameter.len() < 8 {
           parameter = Parameter {
-            name: name.clone(),
-            value_type: value_type.clone(),
-            arg_index: self.parameters.len(),
-            class: ParameterClass::SSE(self.stack_reserve_size),
+            // name: name.to_string(),
+            // value_type: value_type.clone(),
+            // arg_index: self.parameters.len(),
+            class: ParameterClass::Sse(self.stack_reserve_size),
             class_index: self.sse_parameter.len(),
           };
           self.stack_reserve_size += 8;
@@ -139,9 +139,9 @@ impl SystemV {
         }
         else {
           parameter = Parameter {
-            name: name.clone(),
-            value_type: value_type.clone(),
-            arg_index: self.parameters.len(),
+            // name: name.to_string(),
+            // value_type: value_type.clone(),
+            // arg_index: self.parameters.len(),
             class: ParameterClass::Memory(self.memory_size),
             class_index: self.memory_parameters.len(),
           };
@@ -164,11 +164,11 @@ impl SystemV {
 
   pub fn add_parameters(&mut self, parameters: &Vec<(String, PrimitiveTypes)>) {
     let mut memory_class: Vec<&(String, PrimitiveTypes)> = Vec::new();
-    for p @ (name, value_type) in parameters {
+    for p @ (_name, value_type) in parameters {
       match value_type {
         PrimitiveTypes::U64 => {
           if self.integer_parameters.len() < 6 {
-            self.add(name, value_type);
+            self.add(value_type);
           }
           else {
             memory_class.push(p);
@@ -176,7 +176,7 @@ impl SystemV {
         }
         PrimitiveTypes::F64 => {
           if self.sse_parameter.len() < 8 {
-            self.add(name, value_type);
+            self.add(value_type);
           }
           else {
             memory_class.push(p);
@@ -186,8 +186,8 @@ impl SystemV {
       }
       println!("{}", self.stack_reserve_size);
     }
-    for (name, value_type) in memory_class.iter().rev() {
-      self.add(name, value_type);
+    for (_name, value_type) in memory_class.iter().rev() {
+      self.add(value_type);
     }
   }
 
@@ -199,7 +199,7 @@ impl SystemV {
       ParameterClass::Integer(offset) => {
         operations.push(Operation::SysVIntegerSaveArgumentAfterCall(parameter.class_index, offset));
       }
-      ParameterClass::SSE(offset) => {
+      ParameterClass::Sse(offset) => {
         operations.push(Operation::SysVSSESaveArgumentAfterCall(parameter.class_index, offset));
       }
       ParameterClass::Memory(_) => {} // nothing to do. already on stack
@@ -214,7 +214,7 @@ impl SystemV {
       ParameterClass::Integer(_) => {
         operations.push(Operation::SysVIntegerArguemtnPreparation(parameter.class_index));
       }
-      ParameterClass::SSE(_) => {
+      ParameterClass::Sse(_) => {
         operations.push(Operation::SysVSSEArgumentPreparation(parameter.class_index));
       }
       ParameterClass::Memory(offset) => {
