@@ -11,6 +11,7 @@ pub enum PrimitiveTypes {
     // explicit types
     U64,
     F64,
+    Bool,
 
     // Only temporarely
     COUNT,
@@ -20,6 +21,7 @@ pub fn match_type(typ: &str) -> Option<PrimitiveTypes> {
     match typ {
         "u64" => Some(PrimitiveTypes::U64),
         "f64" => Some(PrimitiveTypes::F64),
+        "bool" => Some(PrimitiveTypes::Bool),
         _ => None,
     }
 }

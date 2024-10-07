@@ -2,6 +2,7 @@ use std::{collections::HashMap, mem};
 use std::mem::replace;
 
 use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
+use crate::token::Operator;
 
 pub struct TypeChecker {
   scopes: Vec<HashMap<String, (String, PrimitiveTypes)>>,
@@ -273,10 +274,8 @@ impl TypeChecker {
           }
         },
         ASTNodeType::While(ref mut cond, ref mut body) => {
-          let expected_type = PrimitiveTypes::U64;
-          let found_type = self.resolve_types_expression(cond);
-          let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
-          TypeChecker::set_type_for_expression(cond, dominant_type);
+          // let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
+          TypeChecker::set_type_for_expression(cond, &PrimitiveTypes::Bool);
           self.resolve_types_statements(body);
         },
         ASTNodeType::SExpression(ref mut expr) => {
@@ -295,6 +294,14 @@ impl TypeChecker {
   fn resolve_types_expression(&mut self, node: &mut ASTNode) -> PrimitiveTypes{
     let found_type = TypeChecker::find_operant_type(node);
     let new_type: PrimitiveTypes = match node.node_type {
+        ASTNodeType::BinaryOp(ref mut left, Operator::Equal, ref mut right, ref mut op_type) |
+        ASTNodeType::BinaryOp(ref mut left, Operator::Less, ref mut right, ref mut op_type) |
+        ASTNodeType::BinaryOp(ref mut left, Operator::Greater, ref mut right, ref mut op_type) => {
+          TypeChecker::set_type_for_expression(left, &found_type);
+          TypeChecker::set_type_for_expression(right, &found_type);
+          let _ = replace(op_type, PrimitiveTypes::Bool);
+          return found_type
+        }
         ASTNodeType::BinaryOp(_, _, _, _) => found_type,
         ASTNodeType::Literal(ref typ, _) => typ.clone(),
         ASTNodeType::Identifier(_, ref value_type) => {
@@ -314,7 +321,7 @@ impl TypeChecker {
         },
     };
     TypeChecker::set_type_for_expression(node, &new_type);
-    new_type.clone()
+    new_type
   }
 
   fn set_type_for_expression(expr: &mut ASTNode, new_type: &PrimitiveTypes) {
@@ -327,10 +334,40 @@ impl TypeChecker {
           panic!();
         }
       }
-      ASTNodeType::BinaryOp(ref mut left, _, ref mut right, ref mut typ) => {
-        let _ = mem::replace(typ, new_type.clone());
-        TypeChecker::set_type_for_expression(left, new_type);
-        TypeChecker::set_type_for_expression(right, new_type);
+      ASTNodeType::BinaryOp(ref mut left, ref op, ref mut right, ref mut typ) => {
+        match op {
+          Operator::Plus |
+          Operator::Minus |
+          Operator::Mul |
+          Operator::Div => {
+            let _ = mem::replace(typ, new_type.clone());
+            TypeChecker::set_type_for_expression(left, new_type);
+            TypeChecker::set_type_for_expression(right, new_type);
+          }
+          Operator::Equal |
+          Operator::Greater |
+          Operator::Less => {
+            if new_type != &PrimitiveTypes::Bool {
+              panic!("Exprected type '{:#?}', but operands '==', '>', '<' are always returning bool", new_type)
+            }
+            let _ = mem::replace(typ, PrimitiveTypes::Bool);
+            let left_t = TypeChecker::find_operant_type(left);
+            let right_t = TypeChecker::find_operant_type(right);
+            let dominant_type = TypeChecker::get_dominant_type(&left_t, &right_t);
+            TypeChecker::set_type_for_expression(left, dominant_type);
+            TypeChecker::set_type_for_expression(right, dominant_type);
+          }
+
+          Operator::And |
+          Operator::Or => {
+            if new_type != &PrimitiveTypes::Bool {
+              panic!("The 'and' and 'or' operators can only operate on 'bool' oprants")
+            }
+            let _ = mem::replace(typ, PrimitiveTypes::Bool);
+            TypeChecker::set_type_for_expression(left, new_type);
+            TypeChecker::set_type_for_expression(right, new_type);
+          }
+        }
       }
 
       ASTNodeType::FunctionDef(_, _, _) |
@@ -358,6 +395,7 @@ impl TypeChecker {
           PrimitiveTypes::Integer |
           PrimitiveTypes::U64 => right_t,
 
+          PrimitiveTypes::Bool => panic!("Mismatch of types '{:#?}' and 'bool", left_t),
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
       },
@@ -373,6 +411,7 @@ impl TypeChecker {
           PrimitiveTypes::Integer |
           PrimitiveTypes::U64 => panic!("mismatch in types {:#?} {:#?}", left_t, right_t),
 
+          PrimitiveTypes::Bool => panic!("Mismatch of types '{:#?}' and 'bool", left_t),
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
       },
@@ -388,6 +427,7 @@ impl TypeChecker {
           PrimitiveTypes::Float |
           PrimitiveTypes::F64 => panic!("mismatch in types {:#?} {:#?}", left_t, right_t),
 
+          PrimitiveTypes::Bool => panic!("Mismatch of types '{:#?}' and 'bool", left_t),
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
       },
@@ -399,7 +439,8 @@ impl TypeChecker {
           PrimitiveTypes::Integer |
           PrimitiveTypes::U64 |
           PrimitiveTypes::Float |
-          PrimitiveTypes::F64 => right_t,
+          PrimitiveTypes::F64 |
+          PrimitiveTypes::Bool => right_t,
 
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
@@ -415,6 +456,7 @@ impl TypeChecker {
           PrimitiveTypes::F64 |
           PrimitiveTypes::Float => panic!("mismatch in types {:#?} {:#?}", left_t, right_t),
 
+          PrimitiveTypes::Bool => panic!("Mismatch of types '{:#?}' and 'bool", left_t),
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
       },
@@ -428,10 +470,24 @@ impl TypeChecker {
           PrimitiveTypes::Integer |
           PrimitiveTypes::U64 => panic!("mismatch in types {:#?} {:#?}", left_t, right_t),
 
+          PrimitiveTypes::Bool => panic!("Mismatch of types '{:#?}' and 'bool", left_t),
           PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
         }
       },
+      PrimitiveTypes::Bool => {
+        match right_t {
+          PrimitiveTypes::Bool => left_t,
 
+          PrimitiveTypes::Number |
+          PrimitiveTypes::Float |
+          PrimitiveTypes::Integer |
+          PrimitiveTypes::Void |
+          PrimitiveTypes::U64 |
+          PrimitiveTypes::F64 => panic!("Mismatch of types 'bool' and '{:#?}", right_t),
+
+          PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
+        }
+      }
       PrimitiveTypes::COUNT => panic!("Count is not a valid type"),
     }
 

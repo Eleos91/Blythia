@@ -57,7 +57,7 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     Token::RParen
                 }
-                '+' | '-' | '*' | '/' | '=' | '>' | '<' => self.consume_operator(),
+                '+' | '-' | '*' | '/' | '=' | '>' | '<' | '&' | '|' => self.consume_operator(),
                 '0'..='9' => self.consume_number(),
                 'a'..='z' | 'A'..='Z' | '_' => self.consume_identifier(),
                 ',' => {

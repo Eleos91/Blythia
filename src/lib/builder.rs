@@ -182,28 +182,34 @@ impl  Builder {
       ASTNodeType::BinaryOp(ref left, ref op, ref right, ref typ) => {
         self.translate_node(left, operations);
         self.translate_node(right, operations);
-        let operation = match (typ, op) {
-            (PrimitiveTypes::U64,Operator::Plus) => Operation::AddInt,
-            (PrimitiveTypes::U64,Operator::Minus) => Operation::MinusInt,
-            (PrimitiveTypes::U64,Operator::Mul) => Operation::MultInt,
-            (PrimitiveTypes::U64,Operator::Div) => Operation::DivInt,
-            (PrimitiveTypes::U64,Operator::Equal) => Operation::EqualInt,
-            (PrimitiveTypes::U64,Operator::Greater) => Operation::GreaterInt,
-            (PrimitiveTypes::U64,Operator::Less) => Operation::LessInt,
-            (PrimitiveTypes::F64, Operator::Plus) => Operation::AddFloat,
-            (PrimitiveTypes::F64, Operator::Minus) => Operation::MinusFloat,
-            (PrimitiveTypes::F64, Operator::Mul) => Operation::MultFloat,
-            (PrimitiveTypes::F64, Operator::Div) => Operation::DivFloat,
-            (PrimitiveTypes::F64, _) => todo!(),
+        let left_t = left.get_type().unwrap();
+        let right_t = left.get_type().unwrap();
+        let operation = match (typ, op, left_t, right_t) {
+            (PrimitiveTypes::U64,Operator::Plus, _, _) => Operation::AddInt,
+            (PrimitiveTypes::U64,Operator::Minus, _, _) => Operation::MinusInt,
+            (PrimitiveTypes::U64,Operator::Mul, _, _) => Operation::MultInt,
+            (PrimitiveTypes::U64,Operator::Div, _, _) => Operation::DivInt,
+            (PrimitiveTypes::U64, op, _, _) => self.panic_loc(node, format!("Type 'u64' is not defined for '{:#?}", op).as_str()),
+            (PrimitiveTypes::F64, Operator::Plus, _, _) => Operation::AddFloat,
+            (PrimitiveTypes::F64, Operator::Minus, _, _) => Operation::MinusFloat,
+            (PrimitiveTypes::F64, Operator::Mul, _, _) => Operation::MultFloat,
+            (PrimitiveTypes::F64, Operator::Div, _, _) => Operation::DivFloat,
+            (PrimitiveTypes::F64, op, _, _) => self.panic_loc(node, format!("Type 'f64' is not defined for '{:#?}", op).as_str()),
+            (PrimitiveTypes::Bool, Operator::And, PrimitiveTypes::Bool, PrimitiveTypes::Bool) => Operation::AndBool,
+            (PrimitiveTypes::Bool, Operator::Or, PrimitiveTypes::Bool, PrimitiveTypes::Bool) => Operation::OrBool,
+            (PrimitiveTypes::Bool, Operator::Less, PrimitiveTypes::U64, PrimitiveTypes::U64) => Operation::LessInt,
+            (PrimitiveTypes::Bool, Operator::Equal, PrimitiveTypes::U64, PrimitiveTypes::U64) => Operation::EqualInt,
+            (PrimitiveTypes::Bool, Operator::Greater, PrimitiveTypes::U64, PrimitiveTypes::U64) => Operation::GreaterInt,
+            (PrimitiveTypes::Bool, op, _, _) => self.panic_loc(node, format!("Type 'bool' is not defined for '{:#?}", op).as_str()),
 
             // ambiguous types
-            (PrimitiveTypes::Number, _) => self.panic_loc( node, "Ambigupus type 'Number'"),
-            (PrimitiveTypes::Float,_) => self.panic_loc(node, "Ambigupus type 'Float'"),
-            (PrimitiveTypes::Integer, _) => self.panic_loc(node, "Ambigupus type 'Integer'"),
+            (PrimitiveTypes::Number, _, _, _) => self.panic_loc( node, "Ambigupus type 'Number'"),
+            (PrimitiveTypes::Float,_, _, _) => self.panic_loc(node, "Ambigupus type 'Float'"),
+            (PrimitiveTypes::Integer, _, _, _) => self.panic_loc(node, "Ambigupus type 'Integer'"),
 
             // invalid types
-            (PrimitiveTypes::Void, _) => self.panic_loc(node, "Operations not defined for 'void'"),
-            (PrimitiveTypes::COUNT,_) => self.panic_loc(node, "Invalid type at BinaryOp translation!"),
+            (PrimitiveTypes::Void, _, _, _) => self.panic_loc(node, "Operations not defined for 'void'"),
+            (PrimitiveTypes::COUNT,_, _, _) => self.panic_loc(node, "Invalid type at BinaryOp translation!"),
         };
         operations.push(operation);
       }
@@ -211,7 +217,13 @@ impl  Builder {
         match typ {
           PrimitiveTypes::U64 => operations.push(Operation::PushInt(symbols.clone())),
           PrimitiveTypes::F64 => operations.push(Operation::PushFloat(symbols.clone())),
-          _ => {
+          PrimitiveTypes::Bool => operations.push(Operation::PushBool(symbols.clone())),
+
+          PrimitiveTypes::Number |
+          PrimitiveTypes::Float |
+          PrimitiveTypes::Integer |
+          PrimitiveTypes::Void |
+          PrimitiveTypes::COUNT => {
             self.panic_loc(node, format!("Found unsupported Primitve Type in translate_node: {:#?}, {symbols}", typ).as_str())
           }
         }
@@ -223,9 +235,15 @@ impl  Builder {
         match var_type {
           VarriableType::Global(name, value_type) => {
             match value_type {
-                PrimitiveTypes::U64 => operations.push(Operation::LoadInt(name)),
-                PrimitiveTypes::F64 => operations.push(Operation::LoadFloat(name)),
-                _ => self.panic_loc(node, "unexpected type")
+              PrimitiveTypes::Bool |
+              PrimitiveTypes::U64 => operations.push(Operation::LoadInt(name)),
+              PrimitiveTypes::F64 => operations.push(Operation::LoadFloat(name)),
+
+              PrimitiveTypes::Number |
+              PrimitiveTypes::Float |
+              PrimitiveTypes::Integer |
+              PrimitiveTypes::Void |
+              PrimitiveTypes::COUNT => self.panic_loc(node, "unexpected type"),
             }
           }
           VarriableType::Parameter(p) => {

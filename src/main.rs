@@ -16,8 +16,12 @@ fn test2(file: &Path) {
     let Ok(content) = f else {
         panic!("Error while reading file: {:#?}" , f);
     };
-    let lexer = Lexer::new(&content,file.file_name().unwrap().to_str().unwrap().to_string() );
-    let mut parser = Parser::new(lexer, file.file_name().unwrap().to_str().unwrap().to_string());
+
+    let file_name = file.file_name().unwrap().to_str().unwrap().to_string();
+    println!("Starting compilation process for {}", file_name);
+
+    let lexer = Lexer::new(&content,file_name.clone() );
+    let mut parser = Parser::new(lexer, file_name.clone());
 
     println!("Meassuring parser time");
     let now = Instant::now();
@@ -33,7 +37,7 @@ fn test2(file: &Path) {
     println!("Elapsed: {:.2?}", elapsed);
 
     println!("Meassuring build program time");
-    let mut op = Builder::new(file.file_name().unwrap().to_str().unwrap().to_string());
+    let mut op = Builder::new(file_name.clone());
     let now = Instant::now();
     let program = op.build_program(&mut ast);
     let elapsed = now.elapsed();
@@ -53,6 +57,7 @@ fn test2(file: &Path) {
     }
     let _ = Command::new("nasm")
         .arg("-felf64")
+        .arg("-gdwarf")
         .arg(outfile.to_str().unwrap())
         .output()
         .expect("Nasm failed to compile");
