@@ -136,6 +136,12 @@ impl<'a> Parser<'a> {
                 Keyword::While => {
                     self.parse_while()
                 }
+                Keyword::True => {
+                    self.parse_expression(Precedences::P0)
+                }
+                Keyword::False => {
+                    self.parse_expression(Precedences::P0)
+                }
                 Keyword::Else => {
                     self.panic_loc("Unexpected 'else' keyword.")
                 }
@@ -397,6 +403,20 @@ impl<'a> Parser<'a> {
                 self.advance();
                 ASTNode {
                     node_type: ASTNodeType::Literal(PrimitiveTypes::Float, _n),
+                    loc,
+                }
+            }
+            Token::Keyword(Keyword::True) => {
+                self.advance();
+                ASTNode {
+                    node_type: ASTNodeType::Literal(PrimitiveTypes::Bool, "true".to_string()),
+                    loc,
+                }
+            }
+            Token::Keyword(Keyword::False) => {
+                self.advance();
+                ASTNode {
+                    node_type: ASTNodeType::Literal(PrimitiveTypes::Bool, "false".to_string()),
                     loc,
                 }
             }

@@ -112,6 +112,9 @@ impl Compiler {
     for name in program.vars {
       output.push_str(format!("{}: resb 8\n", name).as_str());
     }
+    output.push_str("segment .data\n");
+    output.push_str("true dq 0x0000000000000001\n");
+    output.push_str("false dq 0x0000000000000000\n");
     output
   }
 
@@ -147,8 +150,8 @@ impl Compiler {
           output.push_str("    push rax\n");
         },
         Operation::EqualInt => {
-          output.push_str("    mov r12, 0\n");
-          output.push_str("    mov r13, 1\n");
+          output.push_str("    mov r12, [false]\n");
+          output.push_str("    mov r13, [true]\n");
           output.push_str("    pop rbx\n");
           output.push_str("    pop rax\n");
           output.push_str("    cmp rax, rbx\n");
@@ -156,8 +159,8 @@ impl Compiler {
           output.push_str("    push r12\n");
         }
         Operation::GreaterInt => {
-          output.push_str("    mov r12, 0\n");
-          output.push_str("    mov r13, 1\n");
+          output.push_str("    mov r12, [false]\n");
+          output.push_str("    mov r13, [true]\n");
           output.push_str("    pop rbx\n");
           output.push_str("    pop rax\n");
           output.push_str("    cmp rax, rbx\n");
@@ -165,8 +168,8 @@ impl Compiler {
           output.push_str("    push r12\n");
         }
         Operation::LessInt => {
-          output.push_str("    mov r12, 0\n");
-          output.push_str("    mov r13, 1\n");
+          output.push_str("    mov r12, [false]\n");
+          output.push_str("    mov r13, [true]\n");
           output.push_str("    pop rbx\n");
           output.push_str("    pop rax\n");
           output.push_str("    cmp rax, rbx\n");
@@ -211,6 +214,22 @@ impl Compiler {
           output.push_str("    movq xmm6, rax\n");
           output.push_str("    divsd xmm6, xmm7\n");
           output.push_str("    movq rax, xmm6\n");
+          output.push_str("    push rax\n");
+        }
+        Operation::PushBool(b) => {
+          output.push_str(format!("    push QWORD [{}]\n", b).as_str());
+
+        }
+        Operation::AndBool => {
+          output.push_str("    pop rbx\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    and rax, rbx\n");
+          output.push_str("    push rax\n");
+        }
+        Operation::OrBool => {
+          output.push_str("    pop rbx\n");
+          output.push_str("    pop rax\n");
+          output.push_str("    or rax, rbx\n");
           output.push_str("    push rax\n");
         }
         Operation::PrintInt => {

@@ -25,6 +25,7 @@ pub enum Precedences {
     P0,
     P1,
     P2,
+    P3,
     Count,
 }
 
@@ -33,7 +34,8 @@ impl Precedences {
         match self {
             Precedences::P0 => Precedences::P1,
             Precedences::P1 => Precedences::P2,
-            Precedences::P2 => Precedences::Count,
+            Precedences::P2 => Precedences::P3,
+            Precedences::P3 => Precedences::Count,
             Precedences::Count => panic!("Tried to increment Precedences over max!"),
         }
     }
@@ -48,9 +50,13 @@ pub enum Operator {
     Equal,
     Greater,
     Less,
+    And,
+    Or,
 }
-pub const OPERATOR_SYMBOLS: [char; 8] = ['!','*','+','-','/','=','<','>'];
+pub const OPERATOR_SYMBOLS: [char; 10] = ['!','*','+','-','/','=','<','>','&','|'];
 pub const OPERATOR_MAP: phf::Map<&str, Operator> = phf_map! {
+    "&&" => Operator::And,
+    "||" => Operator::Or,
     "==" => Operator::Equal,
     ">" => Operator::Greater,
     "<" => Operator::Less,
@@ -60,13 +66,15 @@ pub const OPERATOR_MAP: phf::Map<&str, Operator> = phf_map! {
     "/" => Operator::Div,
 };
 pub const OPERATOR_PRECEDENCES: phf::Map<&str, Precedences> = phf_map! {
-    "==" => Precedences::P0,
-    ">" => Precedences::P0,
-    "<" => Precedences::P0,
-    "+" => Precedences::P1,
-    "-" => Precedences::P1,
-    "*" => Precedences::P2,
-    "/" => Precedences::P2,
+    "&&" => Precedences::P0,
+    "||" => Precedences::P0,
+    "==" => Precedences::P1,
+    ">" => Precedences::P1,
+    "<" => Precedences::P1,
+    "+" => Precedences::P2,
+    "-" => Precedences::P2,
+    "*" => Precedences::P3,
+    "/" => Precedences::P3,
 };
 
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
@@ -76,6 +84,8 @@ pub enum Keyword {
     If,
     Else,
     While,
+    True,
+    False,
 }
 
 pub fn match_keywords(s: &str) -> Option<Keyword> {
@@ -85,6 +95,8 @@ pub fn match_keywords(s: &str) -> Option<Keyword> {
         "if" => Some(Keyword::If),
         "else" => Some(Keyword::Else),
         "while" => Some(Keyword::While),
+        "true" => Some(Keyword::True),
+        "false" => Some(Keyword::False),
         _ => None,
     }
 }

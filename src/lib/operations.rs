@@ -17,6 +17,10 @@ pub enum Operation {
   MinusFloat,
   DivFloat,
 
+  PushBool(String),
+  AndBool,
+  OrBool,
+
   PopStack,
 
   PrintInt,
@@ -35,6 +39,7 @@ pub enum Operation {
   LoadInt(String),
   StoreFloat(String),
   LoadFloat(String),
+
 
   // System V operations
   SysVIntegerArguemtnPreparation(usize),
