@@ -101,12 +101,10 @@ impl SystemV {
   fn add(&mut self, value_type: &PrimitiveTypes) {
     let parameter: Parameter;
     match value_type {
+      PrimitiveTypes::Bool |
       PrimitiveTypes::U64 => {
         if self.integer_parameters.len() < 6 {
           parameter = Parameter {
-            // name: name.to_string(),
-            // value_type: value_type.clone(),
-            // arg_index: self.parameters.len(),
             class: ParameterClass::Integer(self.stack_reserve_size),
             class_index: self.integer_parameters.len(),
           };
@@ -115,9 +113,6 @@ impl SystemV {
         }
         else {
           parameter = Parameter {
-            // name: name.to_string(),
-            // value_type: value_type.clone(),
-            // arg_index: self.parameters.len(),
             class: ParameterClass::Memory(self.memory_size),
             class_index: self.memory_parameters.len(),
           };
@@ -128,9 +123,6 @@ impl SystemV {
       PrimitiveTypes::F64 => {
         if self.sse_parameter.len() < 8 {
           parameter = Parameter {
-            // name: name.to_string(),
-            // value_type: value_type.clone(),
-            // arg_index: self.parameters.len(),
             class: ParameterClass::Sse(self.stack_reserve_size),
             class_index: self.sse_parameter.len(),
           };
@@ -139,9 +131,6 @@ impl SystemV {
         }
         else {
           parameter = Parameter {
-            // name: name.to_string(),
-            // value_type: value_type.clone(),
-            // arg_index: self.parameters.len(),
             class: ParameterClass::Memory(self.memory_size),
             class_index: self.memory_parameters.len(),
           };
@@ -149,7 +138,12 @@ impl SystemV {
           self.memory_size += 8;
         }
       },
-      _ => panic!()
+
+      PrimitiveTypes::Number |
+      PrimitiveTypes::Float |
+      PrimitiveTypes::Integer |
+      PrimitiveTypes::Void |
+      PrimitiveTypes::COUNT => panic!(),
     }
     self.parameters.push(parameter);
   }
@@ -166,6 +160,7 @@ impl SystemV {
     let mut memory_class: Vec<&(String, PrimitiveTypes)> = Vec::new();
     for p @ (_name, value_type) in parameters {
       match value_type {
+        PrimitiveTypes::Bool |
         PrimitiveTypes::U64 => {
           if self.integer_parameters.len() < 6 {
             self.add(value_type);
@@ -182,7 +177,12 @@ impl SystemV {
             memory_class.push(p);
           }
         }
-        _ => panic!()
+
+        PrimitiveTypes::Number |
+        PrimitiveTypes::Float |
+        PrimitiveTypes::Integer |
+        PrimitiveTypes::Void |
+        PrimitiveTypes::COUNT => panic!()
       }
       println!("{}", self.stack_reserve_size);
     }
