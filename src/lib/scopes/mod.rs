@@ -19,7 +19,7 @@ impl Parameter for systemv::Parameter {
 }
 
 pub trait Parameters {
-  fn add_parameters(&mut self, parameters: &Vec<(String, PrimitiveTypes)>);
+  fn add_parameters(&mut self, parameters: &[(String, PrimitiveTypes)]);
   fn translate_save_arguments(&self, index: usize, operations: &mut Vec<Operation>);
   fn trnslate_caller_argument(&self, index: usize, operations: &mut Vec<Operation>);
 }
