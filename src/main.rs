@@ -55,12 +55,13 @@ fn test2(file: &Path) {
         Ok(()) => {}
         Err(x) => panic!("Could not save file: {:#?}\nError: {:#?}", outfile, x),
     }
-    let _ = Command::new("nasm")
+    let nasm_out = Command::new("nasm")
         .arg("-felf64")
         .arg("-gdwarf")
         .arg(outfile.to_str().unwrap())
         .output()
         .expect("Nasm failed to compile");
+    println!("{}",String::from_utf8(nasm_out.stderr).unwrap());
 
     let mut binary = outfile.clone();
     binary.set_extension("");

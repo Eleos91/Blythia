@@ -7,7 +7,7 @@ pub mod operations;
 pub mod token;
 pub mod builder;
 pub mod compiler;
-pub mod scopes;
+pub mod os;
 pub mod type_checker;
 
 pub trait Parameters<T> {
