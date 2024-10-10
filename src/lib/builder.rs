@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
-use crate::scopes::systemv::{SystemV, Parameter};
+use crate::os::systemv::{SystemV, Parameter};
 use crate::token::Operator;
-use crate::operations::{Operation, Program};
+use crate::operations::{Operation, OperationsType, Program};
 use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
 
 
@@ -13,9 +15,70 @@ enum VarriableType {
 }
 
 #[derive(Debug, Clone)]
+struct Scope {
+  name: HashMap<Rc<String>, VarriableType>,
+}
+
+impl Scope {
+  pub fn new() -> Self {
+    Scope {
+      name: HashMap::new(),
+    }
+  }
+}
+
+impl Deref for Scope {
+    type Target = HashMap<Rc<String>, VarriableType>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.name
+    }
+}
+
+impl DerefMut for Scope {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.name
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Scopes {
+  scopes: Vec<Scope>,
+}
+
+impl Deref for Scopes {
+    type Target = Vec<Scope>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.scopes
+    }
+}
+
+impl DerefMut for Scopes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.scopes
+    }
+}
+
+impl Scopes {
+  pub fn new() -> Self {
+    Scopes { scopes: Vec::new() }
+  }
+
+  // pub fn get_current_function(&self) -> Option<Rc<String>> {
+  //   for scope in self.scopes.iter().rev() {
+  //     if let ScopeType::Function(name) = &scope.scope_type {
+  //       return Some(name.clone())
+  //     }
+  //   }
+  //   None
+  // }
+}
+
+#[derive(Debug, Clone)]
 pub struct Builder {
-  scopes: Vec<HashMap<String, VarriableType>>,
-  functions: HashMap<String, SystemV>,
+  scopes: Scopes,
+  functions: HashMap<Rc<String>, SystemV>,
   vars: Vec<String>,
   ref_count: usize,
   file_name: String,
@@ -30,7 +93,7 @@ impl Default for Builder {
 impl  Builder {
   pub fn new(file_name: String) -> Builder {
     Builder {
-      scopes: Vec::new(),
+      scopes: Scopes::new(),
       functions: HashMap::new(),
       vars: Vec::new(),
       ref_count: 0,
@@ -52,16 +115,11 @@ impl  Builder {
   }
 
   pub fn build_program(&mut self,ast: &mut Vec<ASTNode>) -> Program {
-    let mut function_defs: Vec<Operation> = Vec::new();
-    self.scan_nodes(ast, &mut function_defs);
-    let mut main: Vec<Operation> = Vec::new();
-    self.translate_nodes(ast, &mut main);
-    let vars: Vec<String> = self.vars.clone();
-    Program {
-      function_defs,
-      main,
-      vars,
-    }
+    let mut program: Program = Program::new();
+    self.scan_nodes(ast);
+    // self.translate_nodes(ast, &mut program, ScopeType::Root);
+    self.translate_nodes(ast, &mut program);
+    program
   }
 
   fn get_ref_number(&mut self) -> usize {
@@ -75,13 +133,13 @@ impl  Builder {
       self.panic_loc(node, "Scope is emppty!")
     }
     for key in self.functions.keys() {
-      if key == name {
+      if key.deref() == name {
         self.panic_loc(node, format!("var '{}' is trying to shadow a function. this is not allowed.", name).as_str())
       }
     }
 
     let var = VarriableType::Global(name.clone(), value_type.clone());
-    self.scopes.last_mut().unwrap().insert(name.clone(), var.clone());
+    self.scopes.last_mut().unwrap().insert(Rc::new(name.to_string()), var);
   }
 
   fn get_var(&self, name: &String) -> Option<VarriableType> {
@@ -93,45 +151,45 @@ impl  Builder {
     None
   }
 
-  fn scan_nodes(&mut self, nodes: &Vec<ASTNode>, operations: &mut Vec<Operation>) {
-    self.scopes.push(HashMap::new());
+  fn scan_nodes(&mut self, nodes: &Vec<ASTNode>) {
+    // self.scopes.push(Scope { scope_type, name: HashMap::new() });
     for node in nodes {
-      self.scan_node(node, operations);
+      self.scan_node(node);
     }
     self.scopes.pop();
   }
 
-  fn scan_node(&mut self, node: &ASTNode, operations: &mut Vec<Operation>) {
+  fn scan_node(&mut self, node: &ASTNode) {
     match node.node_type {
-        ASTNodeType::FunctionDef(ref name, ref args, ref body) => {
+        ASTNodeType::FunctionDef(ref name, ref args, _) => {
           for key in self.functions.keys() {
-            if key == name {
+            if key.deref() == name {
               self.panic_loc(node, format!("Duplicate function with name '{}'.", name).as_str())
             }
           }
 
-          self.scopes.push(HashMap::new()); // scope for parameters
-          operations.push(Operation::BeginFunction(name.clone()));
+          let fucn_name = Rc::new(name.clone());
+          // self.scopes.push(Scope {scope_type: ScopeType::Function(fucn_name), name: HashMap::new()}); // scope for parameters
+          // operations.function_defs.push(Operation::BeginFunction(name.clone()));
           let mut  parameters = SystemV::new();
           if let Some(args) = args {
             parameters.add_parameters(args);
-            let scope = self.scopes.last_mut().unwrap();
-            for (i, (arg_name, _)) in args.iter().enumerate() {
-              parameters.translate_save_arguments(i, operations);
-              let p = parameters.get(i).unwrap();
-              scope.insert(arg_name.clone(), VarriableType::Parameter(p.clone()));
-            }
-            operations.push(Operation::ReserveParameters(parameters.reserved_stack()));
+            // let scope = self.scopes.last_mut().unwrap();
+            // for (i, (arg_name, _)) in args.iter().enumerate() {
+              // parameters.translate_save_arguments(i, operations);
+              // let p = parameters.get(i).unwrap();
+              // let arg_name = Rc::new(arg_name.clone());
+              // scope.insert(arg_name, VarriableType::Parameter(p.clone()));
+            // }
+            // operations.function_defs.push(Operation::ReserveParameters(parameters.reserved_stack()));
           };
-          self.functions.insert(name.clone(), parameters);
-          self.translate_nodes(body, operations);
-          operations.push(Operation::EndFunction());
-          self.scopes.pop(); // remove parameters
-        },
-        ASTNodeType::Declaration(ref name, ref typ, _) => {
-          self.delcare_global_var(node, name, typ.clone());
+          self.functions.insert(fucn_name, parameters);
+          // self.translate_nodes(body, operations);
+          // operations.push(Operation::EndFunction());
+          // self.scopes.pop(); // remove parameters
         },
 
+        ASTNodeType::Declaration(_, _, _) |
         ASTNodeType::Assignment(_, _) |
         ASTNodeType::BinaryOp(_, _, _, _) |
         ASTNodeType::Literal(_, _) |
@@ -144,16 +202,22 @@ impl  Builder {
     }
   }
 
-  fn translate_nodes(&mut self, nodes: &Vec<ASTNode>, operations: &mut Vec<Operation>) {
-    self.scopes.push(HashMap::new());
+  fn translate_nodes(&mut self, nodes: &Vec<ASTNode>, program: &mut Program) {
+    // match scope_type {
+    //     ScopeType::Root => program.cureent_target = OperationsType::Main,
+    //     ScopeType::Function(_) => program.cureent_target = ,
+    //     ScopeType::ControlFlow => {}
+    // };
+    self.scopes.push(Scope::new());
     for node in nodes {
-      self.translate_node(node, operations);
+      self.translate_node(node, program);
     }
     self.scopes.pop();
   }
 
-  fn translate_node(&mut self, node: &ASTNode, operations: &mut Vec<Operation>) {
-
+  fn translate_node(&mut self, node: &ASTNode, program: &mut Program) {
+    // let scope = self.scopes.last_mut().unwrap();
+    // let mut operations = &mut self.scopes.last_mut().unwrap().target.clone();
     match node.node_type {
       ASTNodeType::Assignment(ref name, ref value) => {
         let Some(typ) = self.get_var(name) else {
@@ -163,25 +227,25 @@ impl  Builder {
           VarriableType::Global(name, typ) => {
             match typ {
               PrimitiveTypes::U64 => {
-                self.translate_node(value, operations);
-                operations.push(Operation::StoreInt(name));
+                self.translate_node(value, program);
+                program.push(Operation::StoreInt(name));
               },
               PrimitiveTypes::F64 => {
-                self.translate_node(value, operations);
-                operations.push(Operation::StoreFloat(name));
+                self.translate_node(value, program);
+                program.push(Operation::StoreFloat(name));
               }
               _ => self.panic_loc(node, "Unexpected type!"),
             }
           }
           VarriableType::Parameter(p) => {
-            self.translate_node(value, operations);
-            p.translate_store(operations);
+            self.translate_node(value, program);
+            p.translate_store(program);
           }
         }
       }
       ASTNodeType::BinaryOp(ref left, ref op, ref right, ref typ) => {
-        self.translate_node(left, operations);
-        self.translate_node(right, operations);
+        self.translate_node(left, program);
+        self.translate_node(right, program);
         let left_t = left.get_type().unwrap();
         let right_t = left.get_type().unwrap();
         let operation = match (typ, op, left_t, right_t) {
@@ -211,13 +275,13 @@ impl  Builder {
             (PrimitiveTypes::Void, _, _, _) => self.panic_loc(node, "Operations not defined for 'void'"),
             (PrimitiveTypes::COUNT,_, _, _) => self.panic_loc(node, "Invalid type at BinaryOp translation!"),
         };
-        operations.push(operation);
+        program.push(operation);
       }
       ASTNodeType::Literal(ref typ, ref symbols) => {
         match typ {
-          PrimitiveTypes::U64 => operations.push(Operation::PushInt(symbols.clone())),
-          PrimitiveTypes::F64 => operations.push(Operation::PushFloat(symbols.clone())),
-          PrimitiveTypes::Bool => operations.push(Operation::PushBool(symbols.clone())),
+          PrimitiveTypes::U64 => program.push(Operation::PushInt(symbols.clone())),
+          PrimitiveTypes::F64 => program.push(Operation::PushFloat(symbols.clone())),
+          PrimitiveTypes::Bool => program.push(Operation::PushBool(symbols.clone())),
 
           PrimitiveTypes::Number |
           PrimitiveTypes::Float |
@@ -236,8 +300,8 @@ impl  Builder {
           VarriableType::Global(name, value_type) => {
             match value_type {
               PrimitiveTypes::Bool |
-              PrimitiveTypes::U64 => operations.push(Operation::LoadInt(name)),
-              PrimitiveTypes::F64 => operations.push(Operation::LoadFloat(name)),
+              PrimitiveTypes::U64 => program.push(Operation::LoadInt(name)),
+              PrimitiveTypes::F64 => program.push(Operation::LoadFloat(name)),
 
               PrimitiveTypes::Number |
               PrimitiveTypes::Float |
@@ -247,52 +311,53 @@ impl  Builder {
             }
           }
           VarriableType::Parameter(p) => {
-            p.translate_load(operations);
+            p.translate_load(program);
           }
         }
       }
       ASTNodeType::BuiltinFunction(ref name, ref expr) => {
-        self.translate_node(expr, operations);
+        self.translate_node(expr, program);
         match name.as_str() {
-          "print_int" => operations.push(Operation::PrintInt),
+          "print_int" => program.push(Operation::PrintInt),
           _ => self.panic_loc(node, format!("Unsupported builtin funcrion for translate_node: {}", name).as_str()),
         }
       }
       ASTNodeType::Declaration(ref name, ref value_type, ref expr) => {
         self.delcare_global_var(node, name, value_type.clone());
         self.vars.push(name.clone());
+        program.vars.push(name.clone());
         match expr {
           None => {}
           Some(ref expr) => {
-            self.translate_node(expr, operations);
-            operations.push(Operation::StoreInt(name.clone()));
+            self.translate_node(expr, program);
+            program.push(Operation::StoreInt(name.clone()));
           }
         }
       }
 
       ASTNodeType::If(ref cond, ref then, ref els) => {
-        self.translate_node(cond, operations);
+        self.translate_node(cond, program);
         let n = self.get_ref_number();
-        operations.push(Operation::If(n));
-        self.translate_nodes(then, operations);
-        operations.push(Operation::Else(n));
+        program.push(Operation::If(n));
+        self.translate_nodes(then, program);
+        program.push(Operation::Else(n));
         if let Some(els) = els {
-          self.translate_nodes(els, operations);
+          self.translate_nodes(els, program);
         }
-        operations.push(Operation::EndIF(n));
+        program.push(Operation::EndIF(n));
       }
 
       ASTNodeType::While(ref cond, ref body) => {
         let n = self.get_ref_number();
-        operations.push(Operation::While(n));
-        self.translate_node(cond, operations);
-        operations.push(Operation::CondWhile(n));
-        self.translate_nodes(body, operations);
-        operations.push(Operation::EndWhile(n));
+        program.push(Operation::While(n));
+        self.translate_node(cond, program);
+        program.push(Operation::CondWhile(n));
+        self.translate_nodes(body, program);
+        program.push(Operation::EndWhile(n));
       }
       ASTNodeType::SExpression(ref expr) => {
-        self.translate_node(expr, operations);
-        operations.push(Operation::PopStack);
+        self.translate_node(expr, program);
+        program.push(Operation::PopStack);
       }
       ASTNodeType::FunctionCall(ref name, ref args) => {
         let Some(def_args) = self.functions.get(name) else {
@@ -303,12 +368,38 @@ impl  Builder {
           self.panic_loc(node, "Not the right amount of parameters")
         }
         for (i, expr) in args.iter().enumerate() {
-          self.translate_node(expr, operations);
-          def_args.trnslate_caller_argument(i, operations);
+          self.translate_node(expr, program);
+          def_args.trnslate_caller_argument(i, program);
         }
-        operations.push(Operation::FunctionCall(name.clone(), 0));
+        program.push(Operation::FunctionCall(name.clone(), 0));
       }
-      ASTNodeType::FunctionDef( _, _, _ ) => {} //handled by scan
+      ASTNodeType::FunctionDef( ref name, ref args, ref body ) => {
+        if program.target != OperationsType::Main {
+          self.panic_loc(node, "Can not define function inside a function")
+        }
+
+        let func_name = Rc::new(name.clone());
+        program.target = OperationsType::Function(func_name);
+        self.scopes.push(Scope {name: HashMap::new()}); // scope for parameters
+        program.push(Operation::BeginFunction(name.clone()));
+        let Some(parameters) = self.functions.get(name) else {
+          self.panic_loc(node, &format!("Could not find function '{}' while building the program", name))
+        };
+        if let Some(args) = args {
+          let scope = self.scopes.last_mut().unwrap();
+          for (i, (arg_name, _)) in args.iter().enumerate() {
+            parameters.translate_save_arguments(i, program);
+            let p = parameters.get(i).unwrap();
+            let arg_name = Rc::new(arg_name.clone());
+            scope.insert(arg_name, VarriableType::Parameter(p.clone()));
+          }
+          program.push(Operation::ReserveParameters(parameters.reserved_stack()));
+        };
+        self.translate_nodes(body, program);
+        program.push(Operation::EndFunction());
+        program.target = OperationsType::Main;
+        self.scopes.pop(); // remove parameters
+      }
     }
   }
 }

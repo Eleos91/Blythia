@@ -1,4 +1,6 @@
 
+use std::{ops::{Deref, DerefMut}, rc::Rc};
+
 #[derive(Debug)]
 pub enum Operation {
   PushInt(String),
@@ -65,11 +67,60 @@ pub enum Operant {
   LiteralInt(i32),
 }
 
+pub struct Operations {
+  operations: Vec<Operation>,
+}
+
+impl Deref for Operations {
+  type Target = Vec<Operation>;
+
+  fn deref(&self) -> &Self::Target {
+        &self.operations
+    }
+}
+
+impl DerefMut for Operations {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.operations
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum OperationsType {
+  Function(Rc<String>),
+  Main,
+}
+
 #[derive(Debug)]
 pub struct Program {
   pub function_defs: Vec<Operation>,
   pub main: Vec<Operation>,
   pub vars: Vec<String>,
+  pub target: OperationsType,
 }
 
+impl Default for Program {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Program {
+  pub fn new() -> Self {
+    Program {
+      function_defs: Vec::new(),
+      main: Vec::new(),
+      vars: Vec::new(),
+      target: OperationsType::Main,
+    }
+  }
+
+  pub fn push(&mut self, op: Operation) {
+    match self.target {
+      OperationsType::Function(_) => self.function_defs.push(op),
+      OperationsType::Main => self.main.push(op),
+    }
+  }
+
+}
 

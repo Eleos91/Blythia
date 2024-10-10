@@ -1,4 +1,4 @@
-use crate::{ast::PrimitiveTypes, operations::Operation};
+use crate::{ast::PrimitiveTypes, operations::{Operation, Program}};
 
 #[derive(Debug, Clone)]
 enum ParameterClass {
@@ -22,7 +22,7 @@ pub struct Parameter {
 }
 
 impl Parameter {
-  pub fn translate_store(&self, operations: &mut Vec<Operation>) {
+  pub fn translate_store(&self, operations: &mut Program) {
     match self.class {
       ParameterClass::Integer(offset) => {
         operations.push(Operation::SysVIntegerPrameterStore(offset));
@@ -36,7 +36,7 @@ impl Parameter {
     }
   }
 
-  pub fn translate_load(&self, operations: &mut Vec<Operation>) {
+  pub fn translate_load(&self, operations: &mut Program) {
     match self.class {
       ParameterClass::Integer(offset) => {
         operations.push(Operation::SysVIntegerPrameterLoad(offset));
@@ -156,7 +156,7 @@ impl SystemV {
     self.parameters.get(index)
   }
 
-  pub fn add_parameters(&mut self, parameters: &Vec<(String, PrimitiveTypes)>) {
+  pub fn add_parameters(&mut self, parameters: &[(String, PrimitiveTypes)]) {
     let mut memory_class: Vec<&(String, PrimitiveTypes)> = Vec::new();
     for p @ (_name, value_type) in parameters {
       match value_type {
@@ -191,7 +191,7 @@ impl SystemV {
     }
   }
 
-  pub fn translate_save_arguments(&self, index: usize, operations: &mut Vec<Operation>) {
+  pub fn translate_save_arguments(&self, index: usize, operations: &mut Program) {
     let Some(parameter) = self.parameters.get(index) else {
       panic!("function only has '{}' parameters, but tried to access the '{}'th parameter", self.parameters.len(), index)
     };
@@ -206,7 +206,7 @@ impl SystemV {
     }
   }
 
-  pub fn trnslate_caller_argument(&self, index: usize, operations: &mut Vec<Operation>) {
+  pub fn trnslate_caller_argument(&self, index: usize, operations: &mut Program) {
     let Some(parameter) = self.parameters.get(index) else {
       panic!("function only has '{}' parameters, but tried to access the '{}'th parameter", self.parameters.len(), index)
     };
