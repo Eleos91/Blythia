@@ -2,11 +2,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs, io};
+use std::time::Instant;
 
 use blythia::builder::Builder;
 use blythia::compiler::Compiler;
 use blythia::lexer::Lexer;
 use blythia::parser::Parser;
+use blythia::type_checker::TypeChecker;
 
 
 fn test2(file: &Path) {
@@ -14,26 +16,52 @@ fn test2(file: &Path) {
     let Ok(content) = f else {
         panic!("Error while reading file: {:#?}" , f);
     };
-    let lexer = Lexer::new(&content,file.file_name().unwrap().to_str().unwrap().to_string() );
-    let mut parser = Parser::new(lexer, file.file_name().unwrap().to_str().unwrap().to_string());
-    let ast = parser.parse();
-    // println!("{:#?}", ast);
-    let mut op = Builder::new();
-    let program = op.build_program(&ast);
-    // println!("{:#?}", program);
+
+    let file_name = file.file_name().unwrap().to_str().unwrap().to_string();
+    println!("Starting compilation process for {}", file_name);
+
+    let lexer = Lexer::new(&content,file_name.clone() );
+    let mut parser = Parser::new(lexer, file_name.clone());
+
+    println!("Meassuring parser time");
+    let now = Instant::now();
+    let mut ast = parser.parse();
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring type checking time");
+    let now = Instant::now();
+    let mut type_checker = TypeChecker::new();
+    type_checker.prepare_ast(&mut ast);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring build program time");
+    let mut op = Builder::new(file_name.clone());
+    let now = Instant::now();
+    let program = op.build_program(&mut ast);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
+    println!("Meassuring compile time");
+    let now = Instant::now();
     let output = Compiler::compile_program(program);
-    // println!("{}", output);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+
     let mut outfile = PathBuf::new().join(".").join("out").join(file.file_name().unwrap());
     outfile.set_extension("asm");
     match fs::write(&outfile, output) {
         Ok(()) => {}
         Err(x) => panic!("Could not save file: {:#?}\nError: {:#?}", outfile, x),
     }
-    let _ = Command::new("nasm")
+    let nasm_out = Command::new("nasm")
         .arg("-felf64")
+        .arg("-gdwarf")
         .arg(outfile.to_str().unwrap())
         .output()
         .expect("Nasm failed to compile");
+    println!("{}",String::from_utf8(nasm_out.stderr).unwrap());
 
     let mut binary = outfile.clone();
     binary.set_extension("");
