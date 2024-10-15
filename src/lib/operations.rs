@@ -58,8 +58,13 @@ pub enum Operation {
 
   BeginFunction(String),
   ReserveParameters(usize),
-  EndFunction(),
+  EndFunction(String),
   FunctionCall(String, usize),
+  SysVIntegerReturn,
+  SysVSSEReturn,
+  SysVPushIntegerReturn,
+  SysVPushSSEReturn,
+  Return(String),
 }
 
 pub enum Operant {
@@ -85,7 +90,7 @@ impl DerefMut for Operations {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OperationsType {
   Function(Rc<String>),
   Main,

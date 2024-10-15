@@ -276,7 +276,8 @@ impl Compiler {
           output.push_str("    push rbp\n");
           output.push_str("    mov rbp, rsp\n");
         }
-        Operation::EndFunction() => {
+        Operation::EndFunction(name) => {
+          output.push_str(format!("END_{}:\n", name).as_str());
           output.push_str("    mov rsp, rbp\n");
           output.push_str("    pop rbp\n");
           output.push_str("    ret\n");
@@ -336,6 +337,23 @@ impl Compiler {
           output.push_str("    pop rax\n");
           output.push_str(format!("    mov QWORD [rbp + 16 + {}], rax\n", offset).as_str());
         },
+        Operation::SysVIntegerReturn => {
+          output.push_str("pop rax\n");
+        }
+        Operation::SysVSSEReturn => {
+          output.push_str("pop rax\n");
+          output.push_str("movq xmm0, rax\n");
+        }
+        Operation::Return(name) => {
+          output.push_str(&format!("jmp END_{}\n", name));
+        }
+        Operation::SysVPushIntegerReturn => {
+          output.push_str("push rax\n");
+        }
+        Operation::SysVPushSSEReturn => {
+          output.push_str("movq rax, xmm0\n");
+          output.push_str("push rax\n");
+        }
       }
     }
     output

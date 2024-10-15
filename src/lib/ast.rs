@@ -22,6 +22,7 @@ pub fn match_type(typ: &str) -> Option<PrimitiveTypes> {
         "u64" => Some(PrimitiveTypes::U64),
         "f64" => Some(PrimitiveTypes::F64),
         "bool" => Some(PrimitiveTypes::Bool),
+        "void" => Some(PrimitiveTypes::Void),
         _ => None,
     }
 }
@@ -35,8 +36,8 @@ pub struct ASTNode {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNodeType {
-    FunctionDef(String, Option<Vec<(String, PrimitiveTypes)>>,Vec<ASTNode>),
-    FunctionCall(String, Vec<ASTNode>),
+    FunctionDef(String, Option<Vec<(String, PrimitiveTypes)>>, Option<PrimitiveTypes>, Vec<ASTNode>),
+    FunctionCall(String, Vec<ASTNode>, PrimitiveTypes),
     Assignment(String, Box<ASTNode>),
     BinaryOp(Box<ASTNode>, Operator, Box<ASTNode>, PrimitiveTypes),
     Literal(PrimitiveTypes, String),
@@ -46,6 +47,7 @@ pub enum ASTNodeType {
     If(Box<ASTNode>, Vec<ASTNode>, Option<Vec<ASTNode>>),
     While(Box<ASTNode>, Vec<ASTNode>),
     SExpression(Box<ASTNode>), // used for standalone expr to clean up stack
+    Return(Option<Box<ASTNode>>),
 }
 
 impl ASTNode {
@@ -59,6 +61,7 @@ impl ASTNode {
             ASTNodeType::BinaryOp( _, _, _, typ) => Ok(typ.clone()),
             ASTNodeType::Literal(typ, _) => Ok(typ.clone()),
             ASTNodeType::Identifier(_, typ) => Ok(typ.clone()),
+            ASTNodeType::FunctionCall(_, _, return_type) => Ok(return_type.clone()),
             _ => Err(format!("Tried to access type of typeless node: {:#?}", self))
         }
     }

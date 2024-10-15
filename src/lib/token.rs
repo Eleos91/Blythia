@@ -86,6 +86,7 @@ pub enum Keyword {
     While,
     True,
     False,
+    Return,
 }
 
 pub fn match_keywords(s: &str) -> Option<Keyword> {
@@ -97,6 +98,7 @@ pub fn match_keywords(s: &str) -> Option<Keyword> {
         "while" => Some(Keyword::While),
         "true" => Some(Keyword::True),
         "false" => Some(Keyword::False),
+        "return" => Some(Keyword::Return),
         _ => None,
     }
 }
