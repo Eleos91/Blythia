@@ -161,32 +161,20 @@ impl  Builder {
 
   fn scan_node(&mut self, node: &ASTNode) {
     match node.node_type {
-        ASTNodeType::FunctionDef(ref name, ref args, _) => {
+        ASTNodeType::FunctionDef(ref name, ref args, ref return_type, _) => {
           for key in self.functions.keys() {
             if key.deref() == name {
               self.panic_loc(node, format!("Duplicate function with name '{}'.", name).as_str())
             }
           }
 
-          let fucn_name = Rc::new(name.clone());
-          // self.scopes.push(Scope {scope_type: ScopeType::Function(fucn_name), name: HashMap::new()}); // scope for parameters
-          // operations.function_defs.push(Operation::BeginFunction(name.clone()));
-          let mut  parameters = SystemV::new();
+          let func_name = Rc::new(name.clone());
+          let mut  parameters = SystemV::new(func_name.clone());
           if let Some(args) = args {
             parameters.add_parameters(args);
-            // let scope = self.scopes.last_mut().unwrap();
-            // for (i, (arg_name, _)) in args.iter().enumerate() {
-              // parameters.translate_save_arguments(i, operations);
-              // let p = parameters.get(i).unwrap();
-              // let arg_name = Rc::new(arg_name.clone());
-              // scope.insert(arg_name, VarriableType::Parameter(p.clone()));
-            // }
-            // operations.function_defs.push(Operation::ReserveParameters(parameters.reserved_stack()));
           };
-          self.functions.insert(fucn_name, parameters);
-          // self.translate_nodes(body, operations);
-          // operations.push(Operation::EndFunction());
-          // self.scopes.pop(); // remove parameters
+          parameters.add_return(return_type.clone());
+          self.functions.insert(func_name, parameters);
         },
 
         ASTNodeType::Declaration(_, _, _) |
@@ -198,7 +186,8 @@ impl  Builder {
         ASTNodeType::If(_, _, _) |
         ASTNodeType::While(_, _) |
         ASTNodeType::SExpression(_) |
-        ASTNodeType::FunctionCall(_, _) => {},
+        ASTNodeType::Return(_) |
+        ASTNodeType::FunctionCall(_, _, _) => {},
     }
   }
 
@@ -359,7 +348,7 @@ impl  Builder {
         self.translate_node(expr, program);
         program.push(Operation::PopStack);
       }
-      ASTNodeType::FunctionCall(ref name, ref args) => {
+      ASTNodeType::FunctionCall(ref name, ref args, _) => {
         let Some(def_args) = self.functions.get(name) else {
           self.panic_loc(node, format!("Tried to call function '{}' with '{}' arguments and was never defined!", name, args.len()).as_str())
         };
@@ -372,14 +361,15 @@ impl  Builder {
           def_args.trnslate_caller_argument(i, program);
         }
         program.push(Operation::FunctionCall(name.clone(), 0));
+        def_args.translate_function_call(program);
       }
-      ASTNodeType::FunctionDef( ref name, ref args, ref body ) => {
+      ASTNodeType::FunctionDef( ref name, ref args, _, ref body ) => {
         if program.target != OperationsType::Main {
           self.panic_loc(node, "Can not define function inside a function")
         }
 
         let func_name = Rc::new(name.clone());
-        program.target = OperationsType::Function(func_name);
+        program.target = OperationsType::Function(func_name.clone());
         self.scopes.push(Scope {name: HashMap::new()}); // scope for parameters
         program.push(Operation::BeginFunction(name.clone()));
         let Some(parameters) = self.functions.get(name) else {
@@ -396,9 +386,22 @@ impl  Builder {
           program.push(Operation::ReserveParameters(parameters.reserved_stack()));
         };
         self.translate_nodes(body, program);
-        program.push(Operation::EndFunction());
+        program.push(Operation::EndFunction(func_name.deref().clone()));
         program.target = OperationsType::Main;
         self.scopes.pop(); // remove parameters
+      }
+      ASTNodeType::Return(ref expr) => {
+        if let Some(ref expr) = expr {
+          self.translate_node(expr, program);
+        }
+        let OperationsType::Function(ref name) = program.target.clone() else {
+          panic!()
+        };
+        let Some(ref function) = self.functions.get(name) else {
+          panic!()
+        };
+        function.translate_return(program);
+        program.push(Operation::Return(name.deref().clone()));
       }
     }
   }

@@ -142,6 +142,9 @@ impl<'a> Parser<'a> {
                 Keyword::False => {
                     self.parse_expression(Precedences::P0)
                 }
+                Keyword::Return => {
+                    self.parse_return()
+                }
                 Keyword::Else => {
                     self.panic_loc("Unexpected 'else' keyword.")
                 }
@@ -149,9 +152,6 @@ impl<'a> Parser<'a> {
             Token::Identifier(_) => {
                 if Token::Assignment == self.next_token {
                     self.parse_assignment()
-                }
-                else if Token::LParen == self.next_token {
-                   self.parse_function_call()
                 }
                 else {
                     self.parse_statement_expression()
@@ -188,8 +188,26 @@ impl<'a> Parser<'a> {
         if Token::RParen != self.current_token {
             args = Some(self.parse_function_def_args());
         }
-
         self.advance(); // consume ')'
+
+        let mut return_type: Option<PrimitiveTypes> = None;
+        if let Token::Operator(op) = self.current_token.clone() {
+            if op == "->" {
+                self.advance(); // consume '->'
+                let Token::Identifier(type_str) = self.current_token.clone() else {
+                    self.panic_loc("Expected a type after '->' during function defenition")
+                };
+                let Some(found_type) = match_type(&type_str) else {
+                    self.panic_loc(&format!("'{}' is not a valid type", type_str))
+                };
+                return_type = Some(found_type);
+                self.advance(); // consume type
+            }
+            else {
+                self.panic_loc(&format!("Unexpected operator '{}' found during dunciton definition", op))
+            }
+        }
+
         if Token::Colon != self.current_token{
             self.panic_loc("expected ':' while parsing function definition.")
         }
@@ -207,7 +225,7 @@ impl<'a> Parser<'a> {
         let body = self.parse();
 
         ASTNode {
-            node_type: ASTNodeType::FunctionDef(func_name, args, body,),
+            node_type: ASTNodeType::FunctionDef(func_name, args, return_type, body,),
              loc,
         }
 
@@ -273,16 +291,16 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // consume ')'
 
-        {
-            // println!("WARNING: function calls can not be used as expressions at the moment");
-            // println!("    Treated as a statement instead. This needs to be changed itf");
-            if Token::Newline != self.current_token && Token::EOF != self.current_token{
-                self.panic_loc("expected newline '\\n' while parsing function call.")
-            }
-        }
+        // {
+        //     // println!("WARNING: function calls can not be used as expressions at the moment");
+        //     // println!("    Treated as a statement instead. This needs to be changed itf");
+        //     if Token::Newline != self.current_token && Token::EOF != self.current_token{
+        //         self.panic_loc("expected newline '\\n' while parsing function call.")
+        //     }
+        // }
 
         ASTNode {
-            node_type: ASTNodeType::FunctionCall(name.clone(), args),
+            node_type: ASTNodeType::FunctionCall(name.clone(), args, PrimitiveTypes::Void),
             loc
         }
     }
@@ -391,11 +409,16 @@ impl<'a> Parser<'a> {
                 self.panic_loc("Did not exprect ')' here!")
             }
             Token::Identifier(s) => {
-                let _s = s.clone();
-                self.advance();
-                ASTNode {
-                    node_type: ASTNodeType::Identifier(_s, PrimitiveTypes::Void),
-                    loc,
+                if Token::LParen == self.next_token {
+                    self.parse_function_call()
+                }
+                else {
+                    let _s = s.clone();
+                    self.advance();
+                    ASTNode {
+                        node_type: ASTNodeType::Identifier(_s, PrimitiveTypes::Void),
+                        loc,
+                    }
                 }
             }
             Token::Float(n) => {
@@ -560,6 +583,23 @@ impl<'a> Parser<'a> {
         ASTNode {
             node_type: ASTNodeType::While(Box::new(cond), body),
             loc,
+        }
+    }
+
+    fn parse_return(&mut self) -> ASTNode {
+        if self.current_token != Token::Keyword(Keyword::Return) {
+            self.panic_loc("Expected 'return' here.")
+        }
+        let loc = self.get_current_loc();
+        self.advance();
+
+        let mut expr = None;
+        if self.current_token != Token::Newline || self.current_token != Token::EOF {
+            expr = Some(Box::new(self.parse_expression(Precedences::P0)));
+        }
+        ASTNode {
+            loc,
+            node_type: ASTNodeType::Return(expr)
         }
     }
 }

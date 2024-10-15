@@ -7,10 +7,11 @@ y = 4.0
 x * y
 y / x
 
-def abc(a: f64, b: f64):
+def abc(a: f64, b: f64) -> f64:
   a + b
   a = 10.0
   b = 20.0
   a + b
+  return a + b
 
-abc(1.0, 2.0)
+var ret: f64 = abc(1.0, 2.0)

@@ -9,6 +9,7 @@ pub struct TypeChecker {
   var_types: HashMap<String, PrimitiveTypes>,
   var_ref_count: HashMap<String, usize>,
   functions: HashMap<String, (Vec<PrimitiveTypes>, Option<PrimitiveTypes>)>,
+  current_function_return_type: Option<PrimitiveTypes>
 }
 
 impl Default for TypeChecker {
@@ -24,11 +25,13 @@ impl TypeChecker {
       var_types: HashMap::new(),
       functions: HashMap::new(),
       var_ref_count: HashMap::new(),
+      current_function_return_type: None,
     }
   }
 
   pub fn prepare_ast(&mut self, ast: &mut Vec<ASTNode>) {
     self.register_functions(ast);
+    println!("{:?}", self.functions);
     self.rename_global_variables(ast);
     self.resolve_types(ast);
   }
@@ -104,7 +107,7 @@ impl TypeChecker {
 
   fn register_functions(&mut self, ast: &Vec<ASTNode>) {
     for node in ast {
-      if let ASTNodeType::FunctionDef(ref name, ref args, _) = node.node_type {
+      if let ASTNodeType::FunctionDef(ref name, ref args, ref return_type, _) = node.node_type {
         if self.functions.contains_key(name) {
           panic!("double function delcaration '{name}'")
         }
@@ -114,7 +117,7 @@ impl TypeChecker {
             arg_types.push(arg_type.clone());
           }
         };
-        self.functions.insert(name.clone(), (arg_types, None));
+        self.functions.insert(name.clone(), (arg_types, return_type.clone()));
       }
     }
   }
@@ -127,7 +130,7 @@ impl TypeChecker {
     self.scopes.push(HashMap::new());
     for node in ast {
       match node.node_type {
-        ASTNodeType::FunctionDef(_, ref mut args, ref mut body) => {
+        ASTNodeType::FunctionDef(_, ref mut args, _, ref mut body) => {
           self.scopes.push(HashMap::new());
           if let Some(args) = args {
             self.declare_parameters(args);
@@ -135,11 +138,6 @@ impl TypeChecker {
           self.rename_global_variables_statements(body);
           self.scopes.pop();
         }
-        ASTNodeType::FunctionCall(_, ref mut args) => {
-          for expr in args {
-            self.rename_global_variables_expression(expr);
-          }
-        },
         ASTNodeType::Assignment(ref mut name, ref mut value) => {
           self.rename_global_variables_expression(value);
           let Some((new_name, _)) = self.get_var(name) else {
@@ -171,7 +169,12 @@ impl TypeChecker {
           self.rename_global_variables_expression(cond);
           self.rename_global_variables_statements(body);
         },
+        ASTNodeType::Return(Some(ref mut expr)) => {
+          self.rename_global_variables_expression(expr);
+        }
+        ASTNodeType::Return(None) => {}
 
+        ASTNodeType::FunctionCall(_, _, _) |
         ASTNodeType::Literal(_, _) |
         ASTNodeType::Identifier(_, _) |
         ASTNodeType::BinaryOp(_, _, _, _) => {
@@ -196,16 +199,21 @@ impl TypeChecker {
         let _ = mem::replace(name, new_name);
         let _ = mem::replace(value_type, new_value_type);
       },
+      ASTNodeType::FunctionCall(_, ref mut args, _) => {
+        for expr in args {
+          self.rename_global_variables_expression(expr);
+        }
+      },
 
-      ASTNodeType::FunctionDef(_, _, _) |
-      ASTNodeType::FunctionCall(_, _) |
+      ASTNodeType::Return(_) |
+      ASTNodeType::FunctionDef(_, _, _, _) |
       ASTNodeType::Assignment(_, _) |
       ASTNodeType::BuiltinFunction(_, _) |
       ASTNodeType::Declaration(_, _, _) |
       ASTNodeType::If(_, _, _) |
       ASTNodeType::While(_, _) |
       ASTNodeType::SExpression(_) => {
-        panic!("Unexpected statement while renaming vars in expressions");
+        panic!("Unexpected statement while renaming vars in expressions {:?}", node);
       }
     }
   }
@@ -217,10 +225,96 @@ impl TypeChecker {
   fn resolve_types_statements(&mut self, ast: &mut Vec<ASTNode>) {
     for node in ast {
       match node.node_type {
-        ASTNodeType::FunctionDef(_, _, ref mut body) => {
+        ASTNodeType::FunctionDef(_, _, ref return_type, ref mut body) => {
+          self.current_function_return_type = return_type.clone();
           self.resolve_types_statements(body);
+          self.current_function_return_type = None;
+        }
+        ASTNodeType::Assignment(ref name, ref mut value) => {
+          let new_type = self.resolve_types_expression(value);
+          let Some(var_type) = self.get_var_type(name) else {
+            panic!("Var '{name}' was not declared but tried to assign to.")
+          };
+          let dominant_type = TypeChecker::get_dominant_type(&var_type, &new_type);
+          self.set_type_for_expression(value, dominant_type);
+        }
+        ASTNodeType::BuiltinFunction(_, ref mut expr) => {
+          let expected_type = PrimitiveTypes::U64;
+          let found_type = self.resolve_types_expression(expr);
+          let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
+          self.set_type_for_expression(expr, dominant_type);
+        }
+        ASTNodeType::Declaration(_, ref value_type, ref mut value) => {
+          if let Some(value) = value {
+            let expr_type = self.resolve_types_expression(value);
+            let dominant_type = TypeChecker::get_dominant_type(value_type, &expr_type);
+            if value_type != dominant_type {
+              panic!("mismatch in types during Declaration {:#?} {:#?}", value_type, expr_type);
+            }
+            self.set_type_for_expression(value, dominant_type);
+          }
+        }
+        ASTNodeType::If(ref mut cond, ref mut then, ref mut els) => {
+          let expected_type = PrimitiveTypes::U64;
+          let found_type = self.resolve_types_expression(cond);
+          let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
+          self.set_type_for_expression(cond, dominant_type);
+          self.resolve_types_statements(then);
+          if let Some(els) = els {
+            self.resolve_types_statements(els);
+          }
+        }
+        ASTNodeType::While(ref mut cond, ref mut body) => {
+          // let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
+          self.set_type_for_expression(cond, &PrimitiveTypes::Bool);
+          self.resolve_types_statements(body);
+        }
+        ASTNodeType::SExpression(ref mut expr) => {
+          let _ = self.resolve_types_expression(expr);
+        }
+        ASTNodeType::Return(ref mut expr) => {
+          match (expr, self.current_function_return_type.clone()) {
+            (None, None) => {}, // fine
+            (Some(ref mut expr), Some(return_type)) => {
+              let found_type = self.resolve_types_expression(expr.as_mut());
+              if found_type != return_type {
+                panic!()
+              }
+            },
+
+            (Some(_), None) |
+            (None, Some(_)) => panic!("{:?}", node),
+          }
+        }
+
+        ASTNodeType::FunctionCall(_, _, _) |
+        ASTNodeType::BinaryOp(_, _, _, _) |
+        ASTNodeType::Literal(_, _) |
+        ASTNodeType::Identifier(_, _) => {
+          panic!()
         },
-        ASTNodeType::FunctionCall(ref name, ref mut args) => {
+      }
+    }
+  }
+
+  fn resolve_types_expression(&mut self, node: &mut ASTNode) -> PrimitiveTypes{
+    let found_type = self.find_operant_type(node);
+    let new_type: PrimitiveTypes = match node.node_type {
+        ASTNodeType::BinaryOp(ref mut left, Operator::Equal, ref mut right, ref mut op_type) |
+        ASTNodeType::BinaryOp(ref mut left, Operator::Less, ref mut right, ref mut op_type) |
+        ASTNodeType::BinaryOp(ref mut left, Operator::Greater, ref mut right, ref mut op_type) => {
+          self.set_type_for_expression(left, &found_type);
+          self.set_type_for_expression(right, &found_type);
+          let _ = replace(op_type, PrimitiveTypes::Bool);
+          return found_type
+        }
+        ASTNodeType::BinaryOp(_, _, _, _) => found_type,
+        ASTNodeType::Literal(ref typ, _) => typ.clone(),
+        ASTNodeType::Identifier(_, ref value_type) => {
+          let dominant_type = TypeChecker::get_dominant_type(value_type, &found_type);
+          dominant_type.clone()
+        }
+        ASTNodeType::FunctionCall(ref name, ref mut args, _) => {
           if !args.is_empty() {
             // print!("WARNING: All return values of all functions are none atm.");
             // print!("WARNING: All functions calls are treated as statements atm.");
@@ -235,82 +329,20 @@ impl TypeChecker {
               let found_type = self.resolve_types_expression(arg);
               let exprected_type = &self.functions.get(name).unwrap().0[i];
               let dominant_type = TypeChecker::get_dominant_type(exprected_type, &found_type);
-              TypeChecker::set_type_for_expression(arg, dominant_type);
+              self.set_type_for_expression(arg, dominant_type);
             }
           }
-        },
-        ASTNodeType::Assignment(ref name, ref mut value) => {
-          let new_type = self.resolve_types_expression(value);
-          let Some(var_type) = self.get_var_type(name) else {
-            panic!("Var '{name}' was not declared but tried to assign to.")
+          let Some(func) = self.functions.get(name) else {
+            panic!()
           };
-          let dominant_type = TypeChecker::get_dominant_type(&var_type, &new_type);
-          TypeChecker::set_type_for_expression(value, dominant_type);
-        },
-        ASTNodeType::BuiltinFunction(_, ref mut expr) => {
-          let expected_type = PrimitiveTypes::U64;
-          let found_type = self.resolve_types_expression(expr);
-          let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
-          TypeChecker::set_type_for_expression(expr, dominant_type);
-        }
-        ASTNodeType::Declaration(_, ref value_type, ref mut value) => {
-          if let Some(value) = value {
-            let expr_type = self.resolve_types_expression(value);
-            let dominant_type = TypeChecker::get_dominant_type(value_type, &expr_type);
-            if value_type != dominant_type {
-              panic!("mismatch in types during Declaration {:#?} {:#?}", value_type, expr_type);
-            }
-            TypeChecker::set_type_for_expression(value, dominant_type);
-          }
-        }
-        ASTNodeType::If(ref mut cond, ref mut then, ref mut els) => {
-          let expected_type = PrimitiveTypes::U64;
-          let found_type = self.resolve_types_expression(cond);
-          let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
-          TypeChecker::set_type_for_expression(cond, dominant_type);
-          self.resolve_types_statements(then);
-          if let Some(els) = els {
-            self.resolve_types_statements(els);
-          }
-        },
-        ASTNodeType::While(ref mut cond, ref mut body) => {
-          // let dominant_type = TypeChecker::get_dominant_type(&expected_type, &found_type);
-          TypeChecker::set_type_for_expression(cond, &PrimitiveTypes::Bool);
-          self.resolve_types_statements(body);
-        },
-        ASTNodeType::SExpression(ref mut expr) => {
-          let _ = self.resolve_types_expression(expr);
-        },
-
-        ASTNodeType::BinaryOp(_, _, _, _) |
-        ASTNodeType::Literal(_, _) |
-        ASTNodeType::Identifier(_, _) => {
-          panic!()
-        },
-      }
-    }
-  }
-
-  fn resolve_types_expression(&mut self, node: &mut ASTNode) -> PrimitiveTypes{
-    let found_type = TypeChecker::find_operant_type(node);
-    let new_type: PrimitiveTypes = match node.node_type {
-        ASTNodeType::BinaryOp(ref mut left, Operator::Equal, ref mut right, ref mut op_type) |
-        ASTNodeType::BinaryOp(ref mut left, Operator::Less, ref mut right, ref mut op_type) |
-        ASTNodeType::BinaryOp(ref mut left, Operator::Greater, ref mut right, ref mut op_type) => {
-          TypeChecker::set_type_for_expression(left, &found_type);
-          TypeChecker::set_type_for_expression(right, &found_type);
-          let _ = replace(op_type, PrimitiveTypes::Bool);
-          return found_type
-        }
-        ASTNodeType::BinaryOp(_, _, _, _) => found_type,
-        ASTNodeType::Literal(ref typ, _) => typ.clone(),
-        ASTNodeType::Identifier(_, ref value_type) => {
-          let dominant_type = TypeChecker::get_dominant_type(value_type, &found_type);
-          dominant_type.clone()
+          let Some(ref return_type) = func.1 else {
+            panic!()
+          };
+          return_type.clone()
         }
 
-        ASTNodeType::FunctionDef(_, _, _) |
-        ASTNodeType::FunctionCall(_, _) |
+        ASTNodeType::Return(_) |
+        ASTNodeType::FunctionDef(_, _, _, _) |
         ASTNodeType::Assignment(_, _) |
         ASTNodeType::BuiltinFunction(_, _) |
         ASTNodeType::Declaration(_, _, _) |
@@ -320,11 +352,11 @@ impl TypeChecker {
           panic!()
         },
     };
-    TypeChecker::set_type_for_expression(node, &new_type);
+    self.set_type_for_expression(node, &new_type);
     new_type
   }
 
-  fn set_type_for_expression(expr: &mut ASTNode, new_type: &PrimitiveTypes) {
+  fn set_type_for_expression(&self, expr: &mut ASTNode, new_type: &PrimitiveTypes) {
     match expr.node_type {
       ASTNodeType::Literal(ref mut typ, _) => {
         let _ = mem::replace(typ, new_type.clone());
@@ -341,8 +373,8 @@ impl TypeChecker {
           Operator::Mul |
           Operator::Div => {
             let _ = mem::replace(typ, new_type.clone());
-            TypeChecker::set_type_for_expression(left, new_type);
-            TypeChecker::set_type_for_expression(right, new_type);
+            self.set_type_for_expression(left, new_type);
+            self.set_type_for_expression(right, new_type);
           }
           Operator::Equal |
           Operator::Greater |
@@ -351,11 +383,11 @@ impl TypeChecker {
               panic!("Exprected type '{:#?}', but operands '==', '>', '<' are always returning bool", new_type)
             }
             let _ = mem::replace(typ, PrimitiveTypes::Bool);
-            let left_t = TypeChecker::find_operant_type(left);
-            let right_t = TypeChecker::find_operant_type(right);
+            let left_t = self.find_operant_type(left);
+            let right_t = self.find_operant_type(right);
             let dominant_type = TypeChecker::get_dominant_type(&left_t, &right_t);
-            TypeChecker::set_type_for_expression(left, dominant_type);
-            TypeChecker::set_type_for_expression(right, dominant_type);
+            self.set_type_for_expression(left, dominant_type);
+            self.set_type_for_expression(right, dominant_type);
           }
 
           Operator::And |
@@ -364,14 +396,36 @@ impl TypeChecker {
               panic!("The 'and' and 'or' operators can only operate on 'bool' oprants")
             }
             let _ = mem::replace(typ, PrimitiveTypes::Bool);
-            TypeChecker::set_type_for_expression(left, new_type);
-            TypeChecker::set_type_for_expression(right, new_type);
+            self.set_type_for_expression(left, new_type);
+            self.set_type_for_expression(right, new_type);
           }
         }
       }
+      ASTNodeType::FunctionCall(ref name, ref mut args, ref mut call_type) => {
+        if args.is_empty() {
+          return;
+        }
+        let Some(parameters) = self.functions.get(name) else {
+          panic!("Could not find function")
+        };
+        let Some(return_type) = &parameters.1 else {
+          panic!("Expected return type for function")
+        };
+        let parameters = &parameters.0;
+        for (i, arg) in args.iter_mut().enumerate() {
+          let parameter_type = parameters[i].clone();
+          let arg_type = self.find_operant_type(arg);
+          let dominant_type = TypeChecker::get_dominant_type(&parameter_type, &arg_type);
+          self.set_type_for_expression(arg, dominant_type);
+        }
+        if new_type != return_type {
+          panic!("function call in expression has type '{:?}', but expected type '{:?}'", return_type, new_type)
+        }
+        let _ = replace(call_type, new_type.clone());
+      }
 
-      ASTNodeType::FunctionDef(_, _, _) |
-      ASTNodeType::FunctionCall(_, _) |
+      ASTNodeType::FunctionDef(_, _, _, _) |
+      ASTNodeType::Return(_) |
       ASTNodeType::Assignment(_, _) |
       ASTNodeType::BuiltinFunction(_, _) |
       ASTNodeType::Declaration(_, _, _) |
@@ -493,13 +547,22 @@ impl TypeChecker {
 
   }
 
-  fn find_operant_type(expr: &ASTNode) -> PrimitiveTypes {
+  fn find_operant_type(&self, expr: &ASTNode) -> PrimitiveTypes {
     match expr.node_type {
         ASTNodeType::Identifier(_, ref typ) => typ.clone(),
         ASTNodeType::Literal(ref typ, _) => typ.clone(),
+        ASTNodeType::FunctionCall(ref name, _, _) => {
+          let Some(funciton) = self.functions.get(name) else {
+            panic!("Could not find function '{}' while type checking function call", name);
+          };
+          let Some(ref return_type) = funciton.1 else {
+            panic!("Function '{}' does not return anything!", name)
+          };
+          return_type.clone()
+        }
         ASTNodeType::BinaryOp(ref left, _, ref right, _) => {
-          let left_t = TypeChecker::find_operant_type(left);
-          let right_t = TypeChecker::find_operant_type(right);
+          let left_t = self.find_operant_type(left);
+          let right_t = self.find_operant_type(right);
           TypeChecker::get_dominant_type(&left_t, &right_t).clone()
         },
 

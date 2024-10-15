@@ -68,6 +68,13 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     Token::Colon
                 }
+                '#' => {
+                    while self.input.peek() != Some(&'\n') && self.input.peek().is_some() {
+                        self.input.next();
+                    }
+                    self.input.next();
+                    self.find_next_token()
+                }
                 unhandled => {
                     self.input.next();
                     let (row, col) = self.position;

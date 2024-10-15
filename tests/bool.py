@@ -3,7 +3,7 @@ var y: bool = false
 x && y
 x|| y
 
-def abc(a: u64, b: bool):
+def abc(a: u64, b: bool) -> void:
   b && true
   print_int(a)
 

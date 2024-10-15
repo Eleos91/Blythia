@@ -1,3 +1,5 @@
+use std::{ops::Deref, rc::Rc};
+
 use crate::{ast::PrimitiveTypes, operations::{Operation, Program}};
 
 #[derive(Debug, Clone)]
@@ -64,17 +66,19 @@ impl Parameter {
   memory_parameters: Vec<Parameter>,
   memory_size: usize,
   stack_reserve_size: usize,
+  return_type: Option<PrimitiveTypes>,
+  func_name: Rc<String>,
  }
 
 impl Default for SystemV {
     fn default() -> Self {
-      SystemV::new()
+      SystemV::new(Rc::from(String::new()))
     }
 }
 
 impl SystemV {
 
-  pub fn new() -> Self {
+  pub fn new(name: Rc<String>) -> Self {
     SystemV {
       parameters: Vec::new(),
       integer_parameters: Vec::new(),
@@ -87,6 +91,8 @@ impl SystemV {
       memory_parameters: Vec::new(),
       memory_size: 0,
       stack_reserve_size: 0,
+      return_type: None,
+      func_name: name,
     }
   }
 
@@ -146,6 +152,10 @@ impl SystemV {
       PrimitiveTypes::COUNT => panic!(),
     }
     self.parameters.push(parameter);
+  }
+
+  pub fn add_return(&mut self, return_type: Option<PrimitiveTypes>) {
+    self.return_type = return_type;
   }
 
   pub fn len(&self) -> usize {
@@ -219,6 +229,44 @@ impl SystemV {
       }
       ParameterClass::Memory(offset) => {
         operations.push(Operation::SysVMemoryArgumentPreparation(offset));
+      }
+    }
+  }
+
+  pub fn translate_return(&self, program: &mut Program) {
+    if let Some(ref return_type) = self.return_type {
+      match return_type {
+        PrimitiveTypes::Bool |
+        PrimitiveTypes::U64 => program.push(Operation::SysVIntegerReturn),
+        PrimitiveTypes::F64 => program.push(Operation::SysVSSEReturn),
+        PrimitiveTypes::Void => {},
+
+        PrimitiveTypes::Integer |
+        PrimitiveTypes::Number |
+        PrimitiveTypes::Float |
+        PrimitiveTypes::COUNT => todo!(),
+      }
+    }
+    let name = self.func_name.deref().clone();
+    program.push(Operation::Return(name));
+  }
+
+  pub fn translate_function_call(&self, program: &mut Program) {
+    if let Some(ref return_type) = self.return_type {
+      match return_type {
+        PrimitiveTypes::Bool |
+        PrimitiveTypes::U64 => {
+          program.push(Operation::SysVPushIntegerReturn);
+        }
+        PrimitiveTypes::F64 => {
+          program.push(Operation::SysVPushSSEReturn);
+        }
+        PrimitiveTypes::Void => {}
+
+        PrimitiveTypes::Number |
+        PrimitiveTypes::Float |
+        PrimitiveTypes::Integer |
+        PrimitiveTypes::COUNT => panic!(),
       }
     }
   }
