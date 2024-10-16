@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::os::systemv::{SystemV, Parameter};
 use crate::token::Operator;
-use crate::operations::{Operation, OperationsType, Program};
+use crate::operations::{ConstVariable, Operation, OperationsType, Program};
 use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
 
 
@@ -12,6 +12,7 @@ use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
 enum VarriableType {
   Global(String, PrimitiveTypes),
   Parameter(Parameter),
+  Const(ConstVariable),
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,7 @@ pub struct Builder {
   scopes: Scopes,
   functions: HashMap<Rc<String>, SystemV>,
   vars: Vec<String>,
+  consts: Vec<ConstVariable>,
   ref_count: usize,
   file_name: String,
 }
@@ -96,6 +98,7 @@ impl  Builder {
       scopes: Scopes::new(),
       functions: HashMap::new(),
       vars: Vec::new(),
+      consts: Vec::new(),
       ref_count: 0,
       file_name,
     }
@@ -142,6 +145,24 @@ impl  Builder {
     self.scopes.last_mut().unwrap().insert(Rc::new(name.to_string()), var);
   }
 
+  fn declare_const(&mut self, node: &ASTNode, progrma: &mut Program) {
+    let ASTNodeType::Const(ref name, ref const_type, ref value) = node.node_type else {
+      self.panic_loc(node, &format!("Tried to declare const, got this instaead {:?}", node))
+    };
+
+    for key in self.functions.keys() {
+      if key.deref() == name {
+        self.panic_loc(node, format!("const '{}' is trying to shadow a function. this is not allowed.", name).as_str())
+      }
+    }
+
+
+    let const_ = ConstVariable(name.clone(), const_type.clone(), value.clone());
+    self.consts.push(const_.clone());
+    progrma.consts.push(const_.clone());
+    self.scopes.last_mut().unwrap().insert(Rc::new(name.clone()), VarriableType::Const(const_));
+  }
+
   fn get_var(&self, name: &String) -> Option<VarriableType> {
     for scope in self.scopes.iter().rev() {
       if let Some(var) = scope.get(name) {
@@ -178,6 +199,7 @@ impl  Builder {
         },
 
         ASTNodeType::Declaration(_, _, _) |
+        ASTNodeType::Const(_, _, _) |
         ASTNodeType::Assignment(_, _) |
         ASTNodeType::BinaryOp(_, _, _, _) |
         ASTNodeType::Literal(_, _) |
@@ -229,6 +251,9 @@ impl  Builder {
           VarriableType::Parameter(p) => {
             self.translate_node(value, program);
             p.translate_store(program);
+          }
+          VarriableType::Const(ConstVariable(ref name, _, _)) => {
+            self.panic_loc(node, &format!("Trying to assign a value to a const '{name}', which is not allowed."))
           }
         }
       }
@@ -286,6 +311,7 @@ impl  Builder {
           self.panic_loc(node, format!("'{}' was not declared!", name).as_str())
         };
         match var_type {
+          VarriableType::Const(ConstVariable(name, value_type, _)) |
           VarriableType::Global(name, value_type) => {
             match value_type {
               PrimitiveTypes::Bool |
@@ -323,7 +349,10 @@ impl  Builder {
           }
         }
       }
-
+      ASTNodeType::Const(_, _, _) => {
+        self.declare_const(node, program);
+        // todo!()
+      },
       ASTNodeType::If(ref cond, ref then, ref els) => {
         self.translate_node(cond, program);
         let n = self.get_ref_number();
@@ -397,7 +426,7 @@ impl  Builder {
         let OperationsType::Function(ref name) = program.target.clone() else {
           panic!()
         };
-        let Some(ref function) = self.functions.get(name) else {
+        let Some(function) = self.functions.get(name) else {
           panic!()
         };
         function.translate_return(program);

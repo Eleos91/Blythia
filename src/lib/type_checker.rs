@@ -1,7 +1,7 @@
 use std::{collections::HashMap, mem};
 use std::mem::replace;
 
-use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes};
+use crate::ast::{ASTNode, ASTNodeType, PrimitiveTypes, ConstLiteral};
 use crate::token::Operator;
 
 pub struct TypeChecker {
@@ -158,6 +158,10 @@ impl TypeChecker {
           let new_name = self.declare_var(name.clone(), value_type.clone());
           let _ = mem::replace(name, new_name);
         },
+        ASTNodeType::Const(ref mut name, ref const_type, _) => {
+          let new_name = self.declare_var(name.clone(), const_type.clone());
+          let _ = mem::replace(name, new_name);
+        }
         ASTNodeType::If(ref mut cond, ref mut then, ref mut els) => {
           self.rename_global_variables_expression(cond);
           self.rename_global_variables_statements(then);
@@ -210,6 +214,7 @@ impl TypeChecker {
       ASTNodeType::Assignment(_, _) |
       ASTNodeType::BuiltinFunction(_, _) |
       ASTNodeType::Declaration(_, _, _) |
+      ASTNodeType::Const(_, _, _) |
       ASTNodeType::If(_, _, _) |
       ASTNodeType::While(_, _) |
       ASTNodeType::SExpression(_) => {
@@ -252,6 +257,26 @@ impl TypeChecker {
               panic!("mismatch in types during Declaration {:#?} {:#?}", value_type, expr_type);
             }
             self.set_type_for_expression(value, dominant_type);
+          }
+        }
+        ASTNodeType::Const(_, ref const_type, ref mut value) => {
+          match (const_type, value) {
+            // valid combinations
+            (PrimitiveTypes::F64, ConstLiteral::Float(_)) |
+            (PrimitiveTypes::U64, ConstLiteral::Integer(_)) |
+            (PrimitiveTypes::Bool, ConstLiteral::Bool(_)) => {}
+
+            // valid const type but mismatch of types
+            (PrimitiveTypes::U64, _) |
+            (PrimitiveTypes::F64, _) |
+            (PrimitiveTypes::Bool, _) => panic!(),
+
+            // ambiguous/invalid types for a const
+            (PrimitiveTypes::Number, _) |
+            (PrimitiveTypes::Float, _) |
+            (PrimitiveTypes::Integer, _) |
+            (PrimitiveTypes::Void, _) |
+            (PrimitiveTypes::COUNT, _) => panic!(),
           }
         }
         ASTNodeType::If(ref mut cond, ref mut then, ref mut els) => {
@@ -346,6 +371,7 @@ impl TypeChecker {
         ASTNodeType::Assignment(_, _) |
         ASTNodeType::BuiltinFunction(_, _) |
         ASTNodeType::Declaration(_, _, _) |
+        ASTNodeType::Const(_, _, _) |
         ASTNodeType::If(_, _, _) |
         ASTNodeType::While(_, _) |
         ASTNodeType::SExpression(_) => {
@@ -399,6 +425,8 @@ impl TypeChecker {
             self.set_type_for_expression(left, new_type);
             self.set_type_for_expression(right, new_type);
           }
+          Operator::Assignment |
+          Operator::ThinArrow => panic!(),
         }
       }
       ASTNodeType::FunctionCall(ref name, ref mut args, ref mut call_type) => {
@@ -429,6 +457,7 @@ impl TypeChecker {
       ASTNodeType::Assignment(_, _) |
       ASTNodeType::BuiltinFunction(_, _) |
       ASTNodeType::Declaration(_, _, _) |
+      ASTNodeType::Const(_, _, _) |
       ASTNodeType::If(_, _, _) |
       ASTNodeType::While(_, _) |
       ASTNodeType::SExpression(_) => {

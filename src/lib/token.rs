@@ -1,5 +1,8 @@
 use phf::phf_map;
 
+//////////////////
+/// TOKENS
+//////////////////
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
 pub enum Token {
     Keyword(Keyword),
@@ -7,8 +10,7 @@ pub enum Token {
     Identifier(String),
     Integer(String),
     Float(String),
-    Operator(String),
-    Assignment,
+    Operator(Operator, String),
     LParen,
     RParen,
     Comma,
@@ -20,12 +22,16 @@ pub enum Token {
 
 pub type LocToken = ((usize, usize), Token);
 
+////////////////
+// OPERATORS
+////////////////
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
 pub enum Precedences {
     P0,
     P1,
     P2,
     P3,
+    P4,
     Count,
 }
 
@@ -35,13 +41,14 @@ impl Precedences {
             Precedences::P0 => Precedences::P1,
             Precedences::P1 => Precedences::P2,
             Precedences::P2 => Precedences::P3,
-            Precedences::P3 => Precedences::Count,
+            Precedences::P3 => Precedences::P4,
+            Precedences::P4 => Precedences::Count,
             Precedences::Count => panic!("Tried to increment Precedences over max!"),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Operator {
     Plus,
     Minus,
@@ -52,9 +59,13 @@ pub enum Operator {
     Less,
     And,
     Or,
+    Assignment,
+    ThinArrow,
 }
 pub const OPERATOR_SYMBOLS: [char; 10] = ['!','*','+','-','/','=','<','>','&','|'];
 pub const OPERATOR_MAP: phf::Map<&str, Operator> = phf_map! {
+    "=" => Operator::Assignment,
+    "->" => Operator::ThinArrow,
     "&&" => Operator::And,
     "||" => Operator::Or,
     "==" => Operator::Equal,
@@ -66,17 +77,22 @@ pub const OPERATOR_MAP: phf::Map<&str, Operator> = phf_map! {
     "/" => Operator::Div,
 };
 pub const OPERATOR_PRECEDENCES: phf::Map<&str, Precedences> = phf_map! {
-    "&&" => Precedences::P0,
-    "||" => Precedences::P0,
-    "==" => Precedences::P1,
-    ">" => Precedences::P1,
-    "<" => Precedences::P1,
-    "+" => Precedences::P2,
-    "-" => Precedences::P2,
-    "*" => Precedences::P3,
-    "/" => Precedences::P3,
+    "=" => Precedences::P0,
+    "->" => Precedences::P0,
+    "&&" => Precedences::P1,
+    "||" => Precedences::P1,
+    "==" => Precedences::P2,
+    ">" => Precedences::P2,
+    "<" => Precedences::P2,
+    "+" => Precedences::P3,
+    "-" => Precedences::P3,
+    "*" => Precedences::P4,
+    "/" => Precedences::P4,
 };
 
+//////////////////////
+/// KEYWORDS
+//////////////////////
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
 pub enum Keyword {
     Def,
@@ -87,6 +103,7 @@ pub enum Keyword {
     True,
     False,
     Return,
+    Const,
 }
 
 pub fn match_keywords(s: &str) -> Option<Keyword> {
@@ -99,10 +116,14 @@ pub fn match_keywords(s: &str) -> Option<Keyword> {
         "true" => Some(Keyword::True),
         "false" => Some(Keyword::False),
         "return" => Some(Keyword::Return),
+        "const" => Some(Keyword::Const),
         _ => None,
     }
 }
 
+///////////////////////
+/// BUILTIN FUNCTIONS
+///////////////////////
 pub fn match_builtin_functions(s: &str) -> Option<String> {
     match s {
         "print_int" => Some(String::from("print_int")),

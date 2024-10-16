@@ -1,6 +1,8 @@
 
 use std::{ops::{Deref, DerefMut}, rc::Rc};
 
+use crate::ast::{ASTNode, ConstLiteral, PrimitiveTypes};
+
 #[derive(Debug)]
 pub enum Operation {
   PushInt(String),
@@ -96,11 +98,15 @@ pub enum OperationsType {
   Main,
 }
 
+#[derive(Debug, Clone)]
+pub struct ConstVariable(pub String, pub PrimitiveTypes, pub ConstLiteral);
+
 #[derive(Debug)]
 pub struct Program {
   pub function_defs: Vec<Operation>,
   pub main: Vec<Operation>,
   pub vars: Vec<String>,
+  pub consts: Vec<ConstVariable>,
   pub target: OperationsType,
 }
 
@@ -116,6 +122,7 @@ impl Program {
       function_defs: Vec::new(),
       main: Vec::new(),
       vars: Vec::new(),
+      consts: Vec::new(),
       target: OperationsType::Main,
     }
   }

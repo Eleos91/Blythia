@@ -1,9 +1,9 @@
 use core::panic;
 use std::cmp::Ordering;
 
-use crate::token::{LocToken, Precedences, Token, OPERATOR_MAP, OPERATOR_PRECEDENCES, Keyword};
+use crate::token::{Keyword, LocToken, Operator, Precedences, Token, OPERATOR_PRECEDENCES};
 use crate::lexer::Lexer;
-use crate::ast::{match_type, ASTNode, ASTNodeType, PrimitiveTypes};
+use crate::ast::{match_return_type, match_variable_type, ASTNode, ASTNodeType, ConstLiteral, PrimitiveTypes};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -130,6 +130,9 @@ impl<'a> Parser<'a> {
                 Keyword::Var => {
                     self.parse_declaration()
                 }
+                Keyword::Const => {
+                    self.parse_const()
+                }
                 Keyword::If => {
                     self.parse_if_else()
                 }
@@ -150,7 +153,7 @@ impl<'a> Parser<'a> {
                 }
             }
             Token::Identifier(_) => {
-                if Token::Assignment == self.next_token {
+                if let Token::Operator(Operator::Assignment, _) = self.next_token {
                     self.parse_assignment()
                 }
                 else {
@@ -190,23 +193,18 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // consume ')'
 
-        let mut return_type: Option<PrimitiveTypes> = None;
-        if let Token::Operator(op) = self.current_token.clone() {
-            if op == "->" {
-                self.advance(); // consume '->'
-                let Token::Identifier(type_str) = self.current_token.clone() else {
-                    self.panic_loc("Expected a type after '->' during function defenition")
-                };
-                let Some(found_type) = match_type(&type_str) else {
-                    self.panic_loc(&format!("'{}' is not a valid type", type_str))
-                };
-                return_type = Some(found_type);
-                self.advance(); // consume type
-            }
-            else {
-                self.panic_loc(&format!("Unexpected operator '{}' found during dunciton definition", op))
-            }
-        }
+        let Token::Operator(Operator::ThinArrow, _) = self.current_token.clone() else {
+            self.panic_loc(&format!("Expected '->' during funciton definition, but got {:?}", self.current_token))
+        };
+        self.advance(); // consume '->'
+        let Token::Identifier(type_str) = self.current_token.clone() else {
+            self.panic_loc("Expected a type after '->' during function defenition")
+        };
+        let Some(found_type) = match_return_type(&type_str) else {
+            self.panic_loc(&format!("'{}' is not a valid type", type_str))
+        };
+        let return_type = Some(found_type);
+        self.advance(); // consume type
 
         if Token::Colon != self.current_token{
             self.panic_loc("expected ':' while parsing function definition.")
@@ -256,7 +254,7 @@ impl<'a> Parser<'a> {
             };
             self.advance();
 
-            let Some(typ) = match_type(type_str.as_str()) else {
+            let Some(typ) = match_variable_type(type_str.as_str()) else {
                 self.panic_loc("Uknown type while declaring function parameters")
             };
 
@@ -350,11 +348,11 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        let Some(typ) = match_type(&typ_str) else {
+        let Some(typ) = match_variable_type(&typ_str) else {
             self.panic_loc(format!("Type with name '{}' does not exist", typ_str).as_str())
         };
 
-        if self.current_token == Token::Assignment {
+        if let Token::Operator(Operator::Assignment, _) = self.current_token {
             self.advance();
             let expr = self.parse_expression(Precedences::P0);
             ASTNode {
@@ -381,9 +379,9 @@ impl<'a> Parser<'a> {
         let name = var_name.clone();
         self.advance(); // consume variable name
 
-        if self.current_token != Token::Assignment {
+        let Token::Operator(Operator::Assignment, _) = self.current_token else {
             self.panic_loc(format!("Expected '=' after identifier: {:#?}", self.current_loc_token).as_str())
-        }
+        };
         self.advance(); // consume '='
 
         let value = self.parse_expression(Precedences::P0);
@@ -464,17 +462,14 @@ impl<'a> Parser<'a> {
 
         let lhs = self.parse_expression(prec.increment());
         if self.current_token != Token::EOF && self.current_token != Token::Newline && self.current_token != Token::Colon {
-            if let Token::Operator(ch) = self.current_token.clone() {
+            if let Token::Operator(op_type, ch) = self.current_token.clone() {
                 let loc = self.get_current_loc();
                 if OPERATOR_PRECEDENCES.get(&ch).expect("Wiil always be safe") == &prec {
                     self.advance();
                     let rhs = self.parse_expression(prec);
 
-                    let Some(op) = OPERATOR_MAP.get(&ch) else {
-                        self.panic_loc(format!("Found unsopported operator while buildine ASTNode: {}", ch).as_str())
-                    };
                     return ASTNode {
-                        node_type: ASTNodeType::BinaryOp(Box::new(lhs), op.clone(), Box::new(rhs), PrimitiveTypes::Void),
+                        node_type: ASTNodeType::BinaryOp(Box::new(lhs), op_type.clone(), Box::new(rhs), PrimitiveTypes::Void),
                         loc,
                     };
                 }
@@ -600,6 +595,70 @@ impl<'a> Parser<'a> {
         ASTNode {
             loc,
             node_type: ASTNodeType::Return(expr)
+        }
+    }
+
+    fn parse_const(&mut self) -> ASTNode {
+        let Token::Keyword(Keyword::Const) = self.current_token else {
+            self.panic_loc("Expected keyword 'const' here.")
+        };
+        self.advance(); // consume 'const'
+
+        let Token::Identifier(identifier) = self.current_token.clone() else {
+            self.panic_loc("Expected identifier here.")
+        };
+        self.advance(); // consume identifier
+
+        let Token::Colon = self.current_token else {
+            self.panic_loc(&format!("Expected ':' for type definition, but got {:?}", self.current_token))
+        };
+        self.advance(); // consume ':'
+
+        let Token::Identifier(type_str) = self.current_token.clone() else {
+            self.panic_loc(&format!("Expected type identifier while parsing a const definition, but got {:?}", self.current_token))
+        };
+        self.advance(); // consume type identifier
+        let Some(const_type) = match_return_type(&type_str) else {
+            self.panic_loc(&format!("Unknown or unsupported type {type_str}"))
+        };
+
+        let Token::Operator(Operator::Assignment, _) = self.current_token else {
+            self.panic_loc("Const declared variables need to be initialized immediately.")
+        };
+        self.advance();
+
+        // Need to do explicit parsing of the expression,
+        // because evaluation during compiletime is not allowed yet.
+
+        let value = match &self.current_token {
+            Token::Integer(value) => {
+                ConstLiteral::Integer(value.clone())
+            }
+            Token::Float(value) => {
+                ConstLiteral::Float(value.clone())
+            }
+
+            Token::Keyword(_) |
+            Token::Builtin(_) |
+            Token::Identifier(_) |
+            Token::Operator(_, _) |
+            Token::LParen |
+            Token::RParen |
+            Token::Comma |
+            Token::Newline |
+            Token::Indent(_) |
+            Token::Colon |
+            Token::EOF => self.panic_loc(&format!("Only literals are allowed for a const assignment, but got {:?}", self.current_token)),
+        };
+        self.advance();
+
+        if Token::Newline != self.current_token {
+            self.panic_loc("Expected newline '\\n' at the end of a const declaration.")
+        }
+        self.advance();
+        ASTNode {
+            loc: self.get_current_loc(),
+            node_type: ASTNodeType::Const(identifier, const_type, value),
         }
     }
 }
