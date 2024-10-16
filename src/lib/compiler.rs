@@ -1,4 +1,4 @@
-use crate::operations::{Operation, Program};
+use crate::{ast::{ConstLiteral, PrimitiveTypes}, operations::{ConstVariable, Operation, Program}};
 
 const INTEGER_ARGUMENT_ORDDER: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 const SSE_ARRGUMENT_ORDER: [&str; 8] = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"];
@@ -113,8 +113,41 @@ impl Compiler {
       output.push_str(format!("{}: resb 8\n", name).as_str());
     }
     output.push_str("segment .data\n");
-    output.push_str("true dq 0x0000000000000001\n");
-    output.push_str("false dq 0x0000000000000000\n");
+    for const_ @ ConstVariable(name, const_type, value) in &program.consts {
+      match const_type {
+        PrimitiveTypes::U64 => {
+          let ConstLiteral::Integer(value) = value else {
+            panic!("Error during compilation. Mismatch of const while building data segment {:?}", const_)
+          };
+          output.push_str(&format!("    {name}: dq {value}\n"));
+        },
+        PrimitiveTypes::F64 => {
+          let ConstLiteral::Float(value) = value else {
+            panic!("Error during compilation. Mismatch of const while building data segment {:?}", const_)
+          };
+          output.push_str(&format!("    {name}: dq __?float64?__({value})\n"));
+        }
+        PrimitiveTypes::Bool => {
+          let ConstLiteral::Bool(value) = value else {
+            panic!("Error during compilation. Mismatch of const while building data segment {:?}", const_)
+          };
+          let value = match value.as_str() {
+            "true" => "1",
+            "false" => "0",
+            _ => panic!()
+          };
+          output.push_str(&format!("    {name}: dq {value}\n"));
+        },
+
+        PrimitiveTypes::Number |
+        PrimitiveTypes::Float |
+        PrimitiveTypes::Integer |
+        PrimitiveTypes::Void |
+        PrimitiveTypes::COUNT => panic!(),
+      }
+    }
+    output.push_str("    true dq 0x0000000000000001\n");
+    output.push_str("    false dq 0x0000000000000000\n");
     output
   }
 
@@ -134,7 +167,7 @@ impl Compiler {
         Operation::MultInt => {
           output.push_str("    pop rbx\n");
           output.push_str("    pop rax\n");
-          output.push_str("    mul rax, rbx\n");
+          output.push_str("    mul rbx\n");
           output.push_str("    push rax\n");
         },
         Operation::MinusInt => {
@@ -146,7 +179,7 @@ impl Compiler {
         Operation::DivInt => {
           output.push_str("    pop rbx\n");
           output.push_str("    pop rax\n");
-          output.push_str("    div rax, rbx\n");
+          output.push_str("    div rbx\n");
           output.push_str("    push rax\n");
         },
         Operation::EqualInt => {

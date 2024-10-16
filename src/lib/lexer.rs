@@ -1,6 +1,6 @@
 use std::str::Chars;
 use std::iter::Peekable;
-use crate::token::{match_builtin_functions, match_keywords, LocToken, Token, OPERATOR_SYMBOLS};
+use crate::token::{match_builtin_functions, match_keywords, LocToken, Token, OPERATOR_MAP, OPERATOR_SYMBOLS};
 
 pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
@@ -181,11 +181,16 @@ impl<'a> Lexer<'a> {
             }
         }
         self.consumption_length += op_str.len();
-        if op_str.as_str() == "=" {
-            Token::Assignment
-        }
-        else {
-            Token::Operator(op_str)
-        }
+
+        let Some(op_type) = OPERATOR_MAP.get(&op_str) else {
+            panic!("Uknown operator '{}'", op_str);
+        };
+        Token::Operator(op_type.clone(), op_str)
+        // if op_str.as_str() == "=" {
+        //     Token::Assignment
+        // }
+        // else {
+        //     Token::Operator(op_str)
+        // }
     }
 }
