@@ -72,7 +72,6 @@ impl<'a> Lexer<'a> {
                     while self.input.peek() != Some(&'\n') && self.input.peek().is_some() {
                         self.input.next();
                     }
-                    self.input.next();
                     self.find_next_token()
                 }
                 unhandled => {
